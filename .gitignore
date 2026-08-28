@@ -3,3 +3,4 @@ data/
 public/vendor/
 *.log
 .env
+cookies-tiktok.json
