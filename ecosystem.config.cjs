@@ -24,7 +24,7 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000,
+        PORT: 8012,
         ADMIN_USER: 'admin',
         ADMIN_PASS: 'gantiPasswordIni',
         POLL_INTERVAL_SEC: 60
