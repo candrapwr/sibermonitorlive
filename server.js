@@ -129,8 +129,28 @@ async function resolveStream(url) {
   return { platform, info };
 }
 
-function wrapAsync(fn) {
-  return (req, res) => {
+/** Sanitasi snapshot info dari client (hasil pencarian) — hanya field dikenal. */
+function sanitizeInfo(raw, url) {
+  const s = (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const n = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0);
+  return {
+    platform: s(raw.platform),
+    source_key: s(raw.source_key),
+    url: s(raw.url) || String(url).trim(),
+    is_live: !!raw.is_live,
+    viewers: n(raw.viewers),
+    title: s(raw.title),
+    display_name: s(raw.display_name),
+    handle: s(raw.handle),
+    avatar_url: /^https:\/\//.test(String(raw.avatar_url || '')) ? raw.avatar_url : undefined,
+    cover_url: /^https:\/\//.test(String(raw.cover_url || '')) ? raw.cover_url : undefined,
+    started_at: Number.isFinite(Number(raw.started_at)) ? Number(raw.started_at) : undefined,
+    playback_url: /^https:\/\//.test(String(raw.playback_url || '')) ? raw.playback_url : undefined,
+    playback_flv_url: /^https:\/\//.test(String(raw.playback_flv_url || '')) ? raw.playback_flv_url : undefined
+  };
+}
+
+function wrapAsync(fn) {  return (req, res) => {
     Promise.resolve(fn(req, res)).catch((err) => {
       const status = err.status || (err.code === 'NOT_LIVE' || err.code === 'NO_DATA' || err.code === 'SEARCH_BLOCKED' ? 422 : 502);
       res.status(status).json({ error: err.message || 'Terjadi kesalahan' });
@@ -247,14 +267,34 @@ app.get('/api/streams', (req, res) => {
   res.json(req.user.role === 'admin' ? db.listStreams() : db.listStreamsForViewer(req.user.id));
 });
 
-// Tambah stream dari URL → resolve info live → otomatis masuk Saved (admin)
+// Tambah stream dari URL → otomatis masuk Saved (admin).
+// Body opsional `info` (snapshot dari hasil pencarian): bila ada dan cocok
+// platform-nya, stream LANGSUNG tersimpan instan tanpa resolve — detail
+// (playback URL, viewers terbaru) diisi ulang oleh refresh di background.
 app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
-  const { url, label, category_id } = req.body || {};
+  const { url, label, category_id, info: infoFromClient } = req.body || {};
   if (!url || !String(url).trim()) {
     return res.status(400).json({ error: 'URL wajib diisi' });
   }
 
-  const { platform, info } = await resolveStream(String(url).trim());
+  let platform = detectPlatform(url);
+  let info = null;
+  let dariClient = false; // true = info berasal dari snapshot pencarian (perlu refresh background)
+
+  // Jalur cepat: pakai snapshot dari hasil pencarian (tidak perlu resolve)
+  if (infoFromClient && typeof infoFromClient === 'object' && infoFromClient.source_key) {
+    const clientPlatform = String(infoFromClient.platform || '');
+    if (!platform || platform === clientPlatform) {
+      platform = platform || clientPlatform;
+      info = sanitizeInfo(infoFromClient, url);
+      dariClient = true;
+    }
+  }
+
+  // Jalur lengkap: resolve via provider (buka halaman live / HTTP)
+  if (!info) {
+    ({ platform, info } = await resolveStream(String(url).trim()));
+  }
   if (!info.source_key) {
     return res.status(422).json({ error: 'Sumber stream tidak bisa diidentifikasi dari URL tersebut' });
   }
@@ -279,6 +319,9 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
       playback_flv_url: info.playback_flv_url,
       error: null
     });
+    if (dariClient) {
+      setImmediate(() => poller.refreshStream(existing.id).catch(() => {}));
+    }
     return res.json({ stream: refreshed || updated, duplicated: true });
   }
 
@@ -305,6 +348,10 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
     error: null
   });
   db.insertSnapshot(stream.id, info.is_live, info.viewers);
+  // Simpan dari hasil pencarian (instan) → lengkapi playback/viewer di background
+  if (dariClient) {
+    setImmediate(() => poller.refreshStream(stream.id).catch(() => {}));
+  }
   res.status(201).json({ stream });
 }));
 

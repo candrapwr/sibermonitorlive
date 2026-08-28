@@ -930,7 +930,7 @@ async function addStreamFromUrl() {
 
     const btn = $('addStreamBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ Mengambil data…';
+    btn.textContent = '⏳ Mengambil data live…';
     try {
         const { stream, duplicated } = await api('/api/streams', {
             method: 'POST',
@@ -1022,16 +1022,43 @@ async function saveFromSearch(idx) {
     const item = state.searchResults && state.searchResults[idx];
     if (!item) return;
     const m = PLATFORM_META[item.platform] || { icon: '❓', name: item.platform };
+
+    // Feedback di tombol kartu selama proses (instan — data pencarian dipakai langsung)
+    const cardBtns = document.querySelectorAll(`#vc-r-${idx} .save-btn`);
+    cardBtns.forEach(b => { b.textContent = '⏳'; b.disabled = true; });
+
     try {
-        const { stream } = await api('/api/streams', {
+        const { stream, duplicated } = await api('/api/streams', {
             method: 'POST',
-            body: JSON.stringify({ url: item.url })
+            body: JSON.stringify({
+                url: item.url,
+                // snapshot dari hasil pencarian → server menyimpan LANGSUNG
+                // (instan), detail playback/viewer dilengkapi di background
+                info: {
+                    platform: item.platform,
+                    source_key: item.source_key,
+                    url: item.url,
+                    is_live: item.is_live,
+                    viewers: item.viewers,
+                    title: item.title,
+                    display_name: item.display_name,
+                    handle: item.handle,
+                    avatar_url: item.avatar_url,
+                    cover_url: item.cover_url,
+                    started_at: item.started_at,
+                    playback_url: item.playback_url,
+                    playback_flv_url: item.playback_flv_url
+                }
+            })
         });
-        showToast('✅', `${m.icon} ${m.name} ${stream.handle || stream.source_key} masuk ke list Saved`);
+        showToast(duplicated ? 'ℹ️' : '✅', duplicated
+            ? `Sudah ada di list Saved`
+            : `${m.icon} ${m.name} ${stream.handle || stream.source_key} masuk ke Saved (instan)`);
         await loadStreams();
         render();
     } catch (err) {
         showToast('❌', err.message, true);
+        cardBtns.forEach(b => { b.textContent = '🔖'; b.disabled = false; });
     }
 }
 

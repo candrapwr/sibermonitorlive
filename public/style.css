@@ -417,7 +417,7 @@ body {
     overflow: hidden;
 }
 
-/* Player inline (YouTube embed / TikTok HLS) */
+/* Player inline (YouTube embed / TikTok HLS) — MEMENUHI kartu penuh */
 .video-player {
     position: absolute;
     inset: 0;
@@ -426,7 +426,20 @@ body {
     background: #000;
     border: 0;
     z-index: 5;
-    object-fit: contain;
+    object-fit: cover; /* penuhi kartu; sisi berlebih terpotong */
+}
+
+/* iframe YouTube tak bisa di-crop via object-fit → perbesar proporsional
+   dan biarkan kontainer memotong sisinya (fill + crop) */
+iframe.video-player {
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: auto;
+    height: 100%;
+    aspect-ratio: 16/9;
+    min-width: 100%;
 }
 
 .player-close {
