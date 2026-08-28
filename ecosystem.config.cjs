@@ -3,14 +3,12 @@
  *
  * Pakai:  pm2 start ecosystem.config.cjs
  *
- * ⚠️ CATATAN PENTING soal PORT/env:
- *  - pm2 restart TIDAK membaca ulang env di file ini — env tersimpan saat
- *    start pertama. Ganti env = wajib:  pm2 delete sibermonitor-live
- *    lalu  pm2 start ecosystem.config.cjs
- *  - Alternatif lebih gampang: buat file .env di folder ini (lihat
- *    .env.example) — cukup `pm2 restart` biasa, tanpa delete.
- *  - Env di sini MENANG dari .env (hapus baris PORT di bawah bila ingin
- *    mengatur port lewat .env).
+ * 💡 Konfigurasi (ADMIN_USER/ADMIN_PASS/PORT/dll) dikelola lewat file .env
+ *    di folder ini — lihat .env.example. File ini SENGAJA tidak menyetel
+ *    nilai tersebut supaya .env selalu menjadi sumber kebenaran.
+ *
+ * ⚠️ Mengubah file .env cukup dengan `pm2 restart sibermonitor-live`
+ *    (aplikasi membaca ulang .env setiap start proses).
  */
 module.exports = {
   apps: [
@@ -23,11 +21,7 @@ module.exports = {
       autorestart: true,
       max_memory_restart: '1G',
       env: {
-        NODE_ENV: 'production',
-        PORT: 8012,
-        ADMIN_USER: 'admin',
-        ADMIN_PASS: 'gantiPasswordIni',
-        POLL_INTERVAL_SEC: 60
+        NODE_ENV: 'production'
       }
     }
   ]
