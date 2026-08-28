@@ -89,23 +89,41 @@ Bisa lewat **file `.env`** (salin dari `.env.example`) **atau** environment asli
 
 ## 🔄 Memindahkan Sesi Login (laptop → server)
 
-Sesi login TikTok (opsional, untuk pencarian keyword TikTok) tersimpan dalam folder **`data/chromium-profile/`** — foldernya bisa dipindah-pindah:
+Sesi login TikTok (opsional, untuk pencarian keyword TikTok) bisa dipindah dari laptop ke server dengan **ekspor/impor cookie** — aman lintas OS (macOS ↔ Linux).
+
+> ⚠️ **Jangan salin folder profil lintas OS** (`rsync data/chromium-profile/` Mac→Linux).
+> Cookie di profil terenkripsi dengan kunci per-OS — Chromium di server gagal
+> mendekripsi dan **menghapus cookie-nya**, jadi sesi selalu hilang. Penyalinan
+> profil hanya berlaku antar-OS sejenis (Mac→Mac / Linux→Linux).
+
+**Cara yang benar (mis. Mac → Ubuntu):**
 
 ```bash
-# 1. Di laptop: login sekali (jendela browser terbuka → login dengan akun Anda)
+# 1. Di LAPTOP — login sekali lalu ekspor cookie (app lokal mati):
 npm run login
+node scripts/export-cookies.js          # → cookies-tiktok.json (RAHASIA!)
 
-# 2. Kirim folder profilnya ke server
-rsync -av data/chromium-profile/ user@server:/path/ke/sibermonitor-live/data/chromium-profile/
+# 2. Kirim ke server
+scp -P 443 cookies-tiktok.json user@server:/home/user/sibermonitorlive/
+# (port biasa cukup: scp cookies-tiktok.json user@server:/path/...)
 
-# 3. Restart app di server → sesi langsung aktif
-pm2 restart sibermonitor-live
+# 3. Di SERVER — stop app, impor cookie (terenkripsi ulang dgn kunci server), start:
+ssh user@server "cd /home/user/sibermonitorlive && git pull \
+  && pm2 stop sibermonitor-live \
+  && node scripts/import-cookies.js cookies-tiktok.json \
+  && pm2 start sibermonitor-live \
+  && rm cookies-tiktok.json"
+
+# 4. Di LAPTOP — bersihkan file cookie:
+rm cookies-tiktok.json
 ```
 
+Skrip impor memverifikasi otomatis — sukses ditandai `✅ sessionid AKTIF`.
+
 Catatan:
-- Pindahkan **saat app mati** di salah satu sisi (profil tidak boleh dipakai dua proses bersamaan)
-- Folder ini juga bisa di-backup — restore = salin balik + start app
-- Hapus folder = semua sesi ter-reset (app tetap jalan, hanya pencarian keyword TikTok yang kembali perlu login)
+- `cookies-tiktok.json` berisi **sesi aktif Anda** — jangan commit/dibagikan (sudah di-gitignore), hapus setelah dipakai
+- File berisi semua cookie TikTok (sessionid + identitas device), jadi server dikenal seperti perangkat laptop Anda
+- Ulangi proses ini kalau sesi kedaluwarsa/di-logout dari HP
 
 ---
 
