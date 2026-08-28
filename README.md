@@ -222,6 +222,17 @@ ecosystem.config.cjs      # Konfigurasi PM2
 
 ---
 
+## 🎨 Update frontend tanpa restart / hard refresh
+
+Frontend dimuat **dinamis berversi**: `index.html` diproses per-request dan semua aset lokal diberi query `?v=<mtime-size>` (mis. `style.css?v=mtcuafm2.p2p`). Ubah `style.css` / `app.js` di disk → dalam ≤15 detik semua browser yang terbuka:
+
+- **CSS berubah** → `<link>` di-hot-swap langsung; tampilan baru diterapkan **tanpa reload** (player yang sedang jalan tidak terputus).
+- **JS berubah** → halaman **reload otomatis**, ditunda sampai semua player ditutup agar playback aman.
+
+Endpoint `GET /api/assets-version` memancarkan versi saat ini (publik, ringan). Server **tidak perlu restart** — versi dibaca dari `mtime` file pada tiap request. Berguna saat `git pull` di production: user lama otomatis dapat frontend baru tanpa diminta hard refresh (Ctrl+Shift+R).
+
+---
+
 ## 🧪 Testing
 
 ```bash

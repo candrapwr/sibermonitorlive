@@ -35,6 +35,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const db = require('./src/db');
 const poller = require('./src/poller');
@@ -46,8 +47,57 @@ const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 app.use(express.json());
-// no-cache: frontend sering berubah — pastikan browser selalu pakai versi terbaru
-app.use(express.static(path.join(__dirname, 'public'), {
+
+/* ------------------------------------------------------------------ */
+/* Versi aset dinamis (cache-busting)                                  */
+/*                                                                     */
+/* style.css / app.js / vendor diberi query ?v=<mtime-size> sehingga   */
+/* browser selalu memuat versi terbaru setelah file berubah — tanpa   */
+/* hard refresh, tanpa restart server (mtime dibaca ulang tiap request) */
+/* ------------------------------------------------------------------ */
+
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+function fileVersion(rel) {
+  try {
+    const st = fs.statSync(path.join(PUBLIC_DIR, rel));
+    return st.mtimeMs.toString(36) + '-' + st.size.toString(36);
+  } catch {
+    return '0';
+  }
+}
+
+// index.html diproses per-request: token __V_*__ diganti versi file.
+// Isi file di-cache dan hanya dibaca ulang kalau index.html berubah.
+const ASSET_TOKENS = {
+  __V_CSS__: () => fileVersion('style.css'),
+  __V_JS__: () => fileVersion('app.js'),
+  __V_HLS__: () => fileVersion('vendor/hls.min.js'),
+  __V_FLV__: () => fileVersion('vendor/mpegts.js')
+};
+let indexCache = { mtime: 0, html: '' };
+
+function renderIndex() {
+  const p = path.join(PUBLIC_DIR, 'index.html');
+  const st = fs.statSync(p);
+  if (indexCache.mtime !== st.mtimeMs) {
+    indexCache = { mtime: st.mtimeMs, html: fs.readFileSync(p, 'utf8') };
+  }
+  let html = indexCache.html;
+  for (const [token, fn] of Object.entries(ASSET_TOKENS)) {
+    html = html.split(token).join(fn());
+  }
+  return html;
+}
+
+// Halaman utama TIDAK di-cache supaya token versi selalu segar;
+// asetnya sendiri boleh di-cache browser karena URL berubah tiap edit.
+app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(renderIndex());
+});
+
+app.use(express.static(PUBLIC_DIR, {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
 
@@ -82,7 +132,7 @@ function parseCookies(req) {
 
 /** Middleware: wajib login; viewer-only endpoints dicek terpisah. */
 app.use('/api', (req, res, next) => {
-  if (req.path === '/auth/login' || req.path === '/health') return next();
+  if (req.path === '/auth/login' || req.path === '/health' || req.path === '/assets-version') return next();
   const user = db.getSessionUser(parseCookies(req).sid);
   if (!user) return res.status(401).json({ error: 'Belum login' });
   req.user = user;
@@ -428,6 +478,13 @@ app.get('/api/stats', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, name: 'SiberMonitorLive', time: Date.now() });
+});
+
+// Versi aset saat ini — dipakai frontend untuk deteksi perubahan CSS/JS
+// (CSS di-hot-swap tanpa reload; JS → reload otomatis saat aman)
+app.get('/api/assets-version', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ css: fileVersion('style.css'), js: fileVersion('app.js') });
 });
 
 /* ------------------------------------------------------------------ */

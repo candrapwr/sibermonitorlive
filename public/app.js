@@ -17,7 +17,10 @@ const state = {
     searchPage: 1,
     searchHasMore: false,
     loadingMore: false,
-    players: new Map()
+    players: new Map(),
+    assetV: null,          // versi CSS/JS saat load — untuk deteksi perubahan otomatis
+    jsReloadPending: false,
+    jsToastShown: false
 };
 
 const hlsMap = new Map();   // key → instance hls.js (HLS) aktif
@@ -592,7 +595,10 @@ function closePlayer(key) {
     const container = document.getElementById('vc-' + key);
     const item = findItemByKey(key);
     if (container && item) container.innerHTML = placeholderHtml(item, key);
-    if (state.players.size === 0) render();
+    if (state.players.size === 0) {
+        render();
+        maybeAutoReload(); // versi app.js baru menunggu → aman reload sekarang
+    }
 }
 
 function stopAllPlayers() {
@@ -1148,6 +1154,45 @@ function bindEvents() {
     });
 }
 
+/* ------------------- Update aset otomatis ------------------- */
+
+/**
+ * Cek versi CSS/JS di server (diambil dari mtime file, tanpa restart).
+ * - CSS berubah → <link> di-hot-swap langsung: tampilan baru diterapkan
+ *   SEKETIKA tanpa reload (player yang sedang jalan tidak terganggu).
+ * - JS berubah → reload otomatis, tapi ditunda sampai tidak ada player
+ *   aktif supaya playback tidak diputus.
+ */
+async function checkAssetsVersion() {
+    try {
+        const v = await api('/api/assets-version');
+        if (!state.assetV) { state.assetV = v; return; }
+
+        if (v.css !== state.assetV.css) {
+            state.assetV.css = v.css;
+            const link = document.querySelector('link[href*="style.css"]');
+            if (link) link.href = `style.css?v=${v.css}`;
+            showToast('🎨', 'Tampilan diperbarui otomatis');
+        }
+        if (v.js !== state.assetV.js) {
+            state.assetV.js = v.js;
+            state.jsReloadPending = true;
+            state.jsToastShown = false;
+            maybeAutoReload();
+        }
+    } catch (_) { /* offline / 401 — coba lagi di interval berikutnya */ }
+}
+
+function maybeAutoReload() {
+    if (!state.jsReloadPending) return;
+    if (state.players.size === 0) {
+        location.reload();
+    } else if (!state.jsToastShown) {
+        state.jsToastShown = true;
+        showToast('🔄', 'Versi app baru — otomatis termuat setelah semua player ditutup');
+    }
+}
+
 async function init() {
     bindEvents();
 
@@ -1156,6 +1201,9 @@ async function init() {
     setInterval(() => {
         if (['saved', 'high', 'live', 'cat-all'].includes(state.view) || state.view.startsWith('cat-')) render();
     }, 10000);
+    // Deteksi perubahan CSS/JS di server → terapkan otomatis
+    checkAssetsVersion(); // baseline langsung, jangan tunggu interval pertama
+    setInterval(checkAssetsVersion, 15000);
 }
 
 async function boot() {
