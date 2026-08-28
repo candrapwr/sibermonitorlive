@@ -1159,3 +1159,44 @@ body:not(.is-admin) .admin-only {
 .toast-message {
     font-size: 13px;
 }
+
+/* ---------- Pilih kategori cepat (simpan dari pencarian) ---------- */
+
+.cat-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.cat-pick-chip {
+    background: #111118;
+    border: 1px solid #2a2a3e;
+    color: #e0e0e0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.cat-pick-chip:hover {
+    border-color: #00f2ea;
+    color: #00f2ea;
+}
+
+.cat-pick-chip.plain {
+    grid-column: 1 / -1;
+    text-align: center;
+    border-style: dashed;
+}
+
+.cat-pick-chip.plain:hover {
+    border-color: #ff0050;
+    color: #ff0050;
+}

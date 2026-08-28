@@ -456,7 +456,7 @@ function cardHtml(item, monitored) {
         : `<div class="avatar">${initial}</div>`;
 
     return `
-    <div class="stream-card ${live ? 'is-live' : ''}">
+    <div class="stream-card ${live ? 'is-live' : ''}" id="card-${key}">
         <div class="stream-header">
             <div class="streamer-info">
                 ${avatar}
@@ -1021,10 +1021,44 @@ async function saveFromSearch(idx) {
     if (!isAdmin()) return;
     const item = state.searchResults && state.searchResults[idx];
     if (!item) return;
+
+    // Ada kategori → pilih dulu lewat modal cepat; belum ada kategori →
+    // langsung masuk Saved tanpa kategori (label "Saved" otomatis)
+    if (state.categories.length > 0) return openCatPick(idx);
+    await saveFromSearchNow(idx, null);
+}
+
+/** Modal pilih kategori cepat saat menyimpan dari hasil pencarian. */
+function openCatPick(idx) {
+    const item = state.searchResults[idx];
+    if (!item) return;
     const m = PLATFORM_META[item.platform] || { icon: '❓', name: item.platform };
+    $('catPickTitle').textContent = `🔖 ${m.icon} ${item.handle || item.source_key}`;
+    $('catPickBody').innerHTML = `
+        <div class="form-hint" style="margin:0 0 12px;">Simpan ke kategori:</div>
+        <div class="cat-pick-grid">
+            ${state.categories.map(c =>
+                `<button class="cat-pick-chip" onclick="saveFromSearchNow(${idx}, ${c.id})" title="${esc(c.name)}">🏷 ${esc(c.name)}</button>`
+            ).join('')}
+            <button class="cat-pick-chip plain" onclick="saveFromSearchNow(${idx}, null)">🔖 Tanpa Kategori (Saved)</button>
+        </div>`;
+    $('catPickModal').classList.add('active');
+}
+
+function closeCatPick() {
+    $('catPickModal').classList.remove('active');
+}
+
+/** Simpan snapshot dari hasil pencarian (instan) — dengan/tanpa kategori. */
+async function saveFromSearchNow(idx, categoryId) {
+    if (!isAdmin()) return;
+    const item = state.searchResults && state.searchResults[idx];
+    if (!item) return;
+    const m = PLATFORM_META[item.platform] || { icon: '❓', name: item.platform };
+    closeCatPick();
 
     // Feedback di tombol kartu selama proses (instan — data pencarian dipakai langsung)
-    const cardBtns = document.querySelectorAll(`#vc-r-${idx} .save-btn`);
+    const cardBtns = document.querySelectorAll(`#card-r-${idx} .save-btn`);
     cardBtns.forEach(b => { b.textContent = '⏳'; b.disabled = true; });
 
     try {
@@ -1032,6 +1066,7 @@ async function saveFromSearch(idx) {
             method: 'POST',
             body: JSON.stringify({
                 url: item.url,
+                ...(categoryId ? { category_id: categoryId } : {}),
                 // snapshot dari hasil pencarian → server menyimpan LANGSUNG
                 // (instan), detail playback/viewer dilengkapi di background
                 info: {
@@ -1051,9 +1086,10 @@ async function saveFromSearch(idx) {
                 }
             })
         });
+        const cat = categoryId ? state.categories.find(c => c.id === categoryId) : null;
         showToast(duplicated ? 'ℹ️' : '✅', duplicated
-            ? `Sudah ada di list Saved`
-            : `${m.icon} ${m.name} ${stream.handle || stream.source_key} masuk ke Saved (instan)`);
+            ? `Sudah ada di list Saved${cat ? ` (🏷 ${cat.name})` : ''}`
+            : `${m.icon} ${m.name} ${stream.handle || stream.source_key} masuk ${cat ? `🏷 ${cat.name}` : 'Saved'} (instan)`);
         await loadStreams();
         render();
     } catch (err) {
@@ -1103,6 +1139,9 @@ function bindEvents() {
     });
     $('catModal').addEventListener('click', function (e) {
         if (e.target === this) closeCatModal();
+    });
+    $('catPickModal').addEventListener('click', function (e) {
+        if (e.target === this) closeCatPick();
     });
     $('usersModal').addEventListener('click', function (e) {
         if (e.target === this) closeUsersPanel();
