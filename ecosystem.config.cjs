@@ -2,7 +2,15 @@
  * Konfigurasi PM2 — SiberMonitorLive
  *
  * Pakai:  pm2 start ecosystem.config.cjs
- * Ganti ADMIN_USER/ADMIN_PASS sesuai kebutuhan sebelum start.
+ *
+ * ⚠️ CATATAN PENTING soal PORT/env:
+ *  - pm2 restart TIDAK membaca ulang env di file ini — env tersimpan saat
+ *    start pertama. Ganti env = wajib:  pm2 delete sibermonitor-live
+ *    lalu  pm2 start ecosystem.config.cjs
+ *  - Alternatif lebih gampang: buat file .env di folder ini (lihat
+ *    .env.example) — cukup `pm2 restart` biasa, tanpa delete.
+ *  - Env di sini MENANG dari .env (hapus baris PORT di bawah bila ingin
+ *    mengatur port lewat .env).
  */
 module.exports = {
   apps: [

@@ -6,6 +6,33 @@
  * (ADMIN_USER / ADMIN_PASS). User lain dibuat admin lewat UI.
  * Viewer (user biasa): hanya melihat list Saved buatan admin, tanpa pencarian.
  */
+
+// Muat file .env (bila ada) PALING AWAL — sebelum modul lain membaca env.
+// Variabel yang sudah ter-set di environment (mis. dari PM2) TIDAK ditimpa.
+(function loadDotEnv() {
+  const fs = require('fs');
+  const path = require('path');
+  const envPath = path.join(__dirname, '.env');
+  try {
+    if (!fs.existsSync(envPath)) return;
+    for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      const eq = t.indexOf('=');
+      if (eq < 1) continue;
+      const key = t.slice(0, eq).trim();
+      let val = t.slice(eq + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (!(key in process.env)) process.env[key] = val; // environment asli menang
+    }
+    console.log('[env] .env dimuat');
+  } catch (e) {
+    console.warn('[env] gagal membaca .env:', e.message);
+  }
+})();
+
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');

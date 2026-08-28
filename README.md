@@ -55,7 +55,7 @@ Buka **http://localhost:3000** → login dengan `ADMIN_USER`/`ADMIN_PASS` → se
 
 ### ⚙️ Variabel environment
 
-Lihat `.env.example`. Ringkasan:
+Bisa lewat **file `.env`** (salin dari `.env.example`) **atau** environment asli (PM2/systemd). Prioritas: **environment asli menang** dari `.env`.
 
 | Env | Default | Fungsi |
 |---|---|---|
@@ -133,6 +133,29 @@ Perintah harian:
 | `pm2 monit` | monitor CPU/RAM real-time |
 
 ⚠️ **`instances: 1` wajib** — antrean browser & database dirancang single-process. Jangan dinaikkan.
+
+### 🔀 Mengganti port di production
+
+⚠️ **`pm2 restart` TIDAK membaca ulang env dari `ecosystem.config.cjs`** — env tersimpan saat start pertama. Dua cara yang benar:
+
+**Cara A — lewat file `.env` (paling gampang, cukup restart biasa):**
+
+```bash
+echo "PORT=4000" >> .env     # di folder project, atau edit .env langsung
+pm2 restart sibermonitor-live
+```
+
+**Cara B — lewat ecosystem (butuh delete + start ulang):**
+
+```bash
+# 1. Edit PORT di ecosystem.config.cjs
+# 2. Start ulang SEPENUHNYA (bukan sekadar restart):
+pm2 delete sibermonitor-live
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+> Catatan: environment asli (ecosystem/PM2) **selalu menang** dari `.env`. Kalau `PORT` sudah ter-set di ecosystem, hapus dulu baris `PORT` di `env:` ecosystem agar `.env` berlaku — atau cukup pakai Cara B.
 
 ---
 
