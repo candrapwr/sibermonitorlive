@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SiberMonitorLive — Live Intelligence Monitoring</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Login Overlay -->
+    <div class="login-overlay" id="loginOverlay" style="display:none;">
+        <form class="login-box" id="loginForm">
+            <div class="logo-icon" style="margin:0 auto 15px;">📡</div>
+            <h2>SiberMonitorLive</h2>
+            <p class="login-sub">Live Intelligence Monitoring — TikTok · YouTube</p>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="loginUser" autocomplete="username" placeholder="username" autofocus>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="loginPass" autocomplete="current-password" placeholder="••••••••">
+            </div>
+            <div class="login-error" id="loginError"></div>
+            <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;padding:12px;">🔐 Masuk</button>
+        </form>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="logo-section">
+            <div class="logo-icon">📡</div>
+            <div class="logo-text">
+                <h1>SiberMonitorLive</h1>
+                <p>Live Intelligence Monitoring — TikTok · YouTube · tanpa API</p>
+            </div>
+        </div>
+        <div class="header-controls">
+            <div class="search-area admin-only">
+                <div class="platform-toggle">
+                    <button data-platform="tiktok" class="active" id="ptTiktok" title="Cari live TikTok">🎵 TikTok</button>
+                    <button data-platform="youtube" id="ptYoutube" title="Cari live YouTube">▶ YouTube</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" placeholder="Cari live stream by keyword..." id="searchInput">
+                </div>
+                <button class="btn" onclick="doSearch()" id="searchBtn" title="Cari live stream">Cari</button>
+            </div>
+            <div class="user-badge" id="userBadge" title="User login">👤</div>
+            <button class="btn admin-only" onclick="openUsersPanel()" id="usersBtn" title="Kelola user">👥</button>
+            <button class="btn" onclick="toggleSidebar()">📊 Analytics</button>
+            <button class="btn btn-primary admin-only" onclick="addStream()">+ Add Stream</button>
+            <button class="btn" onclick="logout()" title="Keluar">🚪</button>
+        </div>
+    </header>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+        <div class="stat-item">
+            <div class="stat-indicator indicator-green"></div>
+            <div>
+                <div class="stat-value" id="totalStreams">0</div>
+                <div class="stat-label">Monitored Streams</div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-indicator indicator-red"></div>
+            <div>
+                <div class="stat-value" id="liveStreams">0</div>
+                <div class="stat-label">Sedang Live</div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div>
+                <div class="stat-value" id="totalViewers">0</div>
+                <div class="stat-label">Total Viewers</div>
+            </div>
+        </div>
+        <div class="stat-item admin-only">
+            <div>
+                <div class="stat-value" id="savedStreams">0</div>
+                <div class="stat-label">Saved</div>
+            </div>
+        </div>
+        <div class="stat-item admin-only">
+            <div>
+                <div class="stat-value" id="highPriority">0</div>
+                <div class="stat-label">High Priority</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar (diisi dinamis oleh app.js sesuai role & kategori) -->
+    <div class="filter-bar" id="filterBar"></div>
+
+    <!-- Monitor Grid -->
+    <div class="monitor-grid" id="streamGrid"></div>
+
+    <!-- Add Stream Modal (admin) -->
+    <div class="modal-overlay" id="addStreamModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>➕ Add Live Stream</h2>
+                <button class="modal-close" onclick="closeAddStreamModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label>URL Live Stream</label>
+                <input type="text" id="streamUrlInput" placeholder="https://www.tiktok.com/@username/live">
+                <div class="form-hint">TikTok: <code>@user/live</code> · YouTube: <code>watch?v=…</code>, <code>youtu.be/…</code>, <code>@channel</code> &nbsp;|&nbsp; Platform: <span class="detected" id="platformDetect">—</span></div>
+            </div>
+            <div class="form-group">
+                <label>Label / Catatan (Opsional)</label>
+                <input type="text" id="streamLabelInput" placeholder="Contoh: Target intelijen - Jakarta">
+            </div>
+            <div class="form-group">
+                <label>Kategori (Opsional)</label>
+                <select id="streamCategoryInput"></select>
+                <div class="form-hint">Kelompokkan stream — kategori dikelola di bar filter</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeAddStreamModal()">Cancel</button>
+                <button class="btn btn-primary" id="addStreamBtn" onclick="addStreamFromUrl()">✅ Add Stream</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Kategori (assign stream / buat kategori baru) -->
+    <div class="modal-overlay" id="catModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="catModalTitle">🗂 Kategori</h2>
+                <button class="modal-close" onclick="closeCatModal()">×</button>
+            </div>
+            <div id="catModalBody"></div>
+        </div>
+    </div>
+
+    <!-- Modal Users (admin) -->
+    <div class="modal-overlay" id="usersModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>👥 Kelola User</h2>
+                <button class="modal-close" onclick="closeUsersPanel()">×</button>
+            </div>
+            <div class="form-group">
+                <label>User baru</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="newUser" placeholder="username" style="flex:1;">
+                    <input type="password" id="newPass" placeholder="password (min 5)" style="flex:1;">
+                    <select id="newRole" style="width:110px;">
+                        <option value="viewer">Viewer</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="createUser()">➕</button>
+                </div>
+                <div class="form-hint">Viewer: hanya lihat Saved per kategori, tanpa pencarian</div>
+            </div>
+            <div id="usersList"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <span class="toast-icon" id="toastIcon">✅</span>
+        <span class="toast-message" id="toastMessage"></span>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>Analytics Panel</h2>
+            <button class="close-sidebar" onclick="toggleSidebar()">×</button>
+        </div>
+        <div id="analyticsContent">
+            <h3>Ringkasan</h3>
+            <div id="analyticsSummary"></div>
+            <h3>Status per Platform</h3>
+            <div id="analyticsPlatform"></div>
+            <h3>Kendala Terakhir</h3>
+            <div id="analyticsErrors" class="error-list"></div>
+        </div>
+    </div>
+
+    <script src="vendor/hls.min.js"></script>
+    <script src="vendor/mpegts.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "sibermonitor-live",
+  "version": "1.0.0",
+  "description": "Portal monitoring live stream TikTok & YouTube — multi-user, kategori, player inline, self-hosted",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "login": "node scripts/login-tiktok.js",
+    "postinstall": "node scripts/copy-vendor.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^4.21.2",
+    "hls.js": "^1.7.1",
+    "mpegts.js": "^1.8.2",
+    "playwright": "^1.49.0"
+  }
+}

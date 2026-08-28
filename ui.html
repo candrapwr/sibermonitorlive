@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Live Intelligence Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #0f3460;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #ff0050, #00f2ea);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .logo-text h1 {
+            font-size: 20px;
+            color: #fff;
+            margin-bottom: 2px;
+        }
+
+        .logo-text p {
+            font-size: 11px;
+            color: #8892b0;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 8px 15px 8px 35px;
+            border-radius: 6px;
+            width: 250px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .search-box input:focus {
+            border-color: #00f2ea;
+            box-shadow: 0 0 10px rgba(0, 242, 234, 0.2);
+        }
+
+        .search-box::before {
+            content: "🔍";
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        }
+
+        .btn {
+            background: #0f3460;
+            border: none;
+            color: #e0e0e0;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 13px;
+        }
+
+        .btn:hover {
+            background: #1a4a7a;
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #ff0050, #ff4d7f);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #ff1a66, #ff6699);
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            background: #111118;
+            padding: 12px 30px;
+            display: flex;
+            gap: 30px;
+            border-bottom: 1px solid #1a1a2e;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #00f2ea;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #8892b0;
+            text-transform: uppercase;
+        }
+
+        .stat-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .indicator-green {
+            background: #00ff88;
+        }
+
+        .indicator-red {
+            background: #ff0050;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            background: #0d0d14;
+            padding: 12px 30px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid #1a1a2e;
+        }
+
+        .filter-chip {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-chip:hover, .filter-chip.active {
+            background: #0f3460;
+            border-color: #00f2ea;
+            color: #00f2ea;
+        }
+
+        /* Grid Layout */
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 15px;
+            padding: 20px 30px;
+        }
+
+        /* Stream Card */
+        .stream-card {
+            background: #111118;
+            border: 1px solid #1a1a2e;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .stream-card:hover {
+            border-color: #0f3460;
+            box-shadow: 0 8px 30px rgba(0, 242, 234, 0.1);
+            transform: translateY(-5px);
+        }
+
+        .stream-header {
+            position: relative;
+            background: #1a1a2e;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .streamer-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .avatar {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff0050, #00f2ea);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .streamer-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .streamer-handle {
+            font-size: 11px;
+            color: #8892b0;
+        }
+
+        .live-badge {
+            background: #ff0050;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            animation: livePulse 2s infinite;
+        }
+
+        @keyframes livePulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 80, 0.7); }
+            50% { box-shadow: 0 0 0 8px rgba(255, 0, 80, 0); }
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 9/16;
+            background: #0a0a0f;
+            overflow: hidden;
+        }
+
+        .video-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #1a1a2e 0%, #0a0a0f 100%);
+            position: relative;
+        }
+
+        .play-icon {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 0, 80, 0.8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .play-icon:hover {
+            background: rgba(255, 0, 80, 1);
+            transform: scale(1.1);
+        }
+
+        .viewer-count {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .eye-icon {
+            font-size: 14px;
+        }
+
+        .duration-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #00f2ea;
+        }
+
+        .stream-meta {
+            padding: 12px;
+            background: #111118;
+        }
+
+        .stream-title {
+            font-size: 13px;
+            color: #e0e0e0;
+            margin-bottom: 8px;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .stream-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .tag {
+            background: #1a1a2e;
+            color: #00f2ea;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+
+        .stream-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #8892b0;
+        }
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .alert-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: #ff0050;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            z-index: 10;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 300px;
+            height: 100vh;
+            background: #111118;
+            border-left: 1px solid #1a1a2e;
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s;
+            z-index: 100;
+        }
+
+        .sidebar.open {
+            transform: translateX(0);
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .close-sidebar {
+            background: none;
+            border: none;
+            color: #e0e0e0;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+
+            .search-box input {
+                width: 200px;
+            }
+
+            .stats-bar {
+                flex-wrap: wrap;
+                gap: 15px;
+                padding: 10px 15px;
+            }
+
+            .monitor-grid {
+                grid-template-columns: 1fr;
+                padding: 15px;
+            }
+
+            .filter-bar {
+                flex-wrap: wrap;
+                padding: 10px 15px;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0a0f;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1a1a2e;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #0f3460;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 15, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.5s;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #1a1a2e;
+            border-top-color: #00f2ea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: #111118;
+            border: 1px solid #1a1a2e;
+            border-radius: 12px;
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            color: #fff;
+            font-size: 20px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #8892b0;
+            font-size: 28px;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .modal-close:hover {
+            color: #ff0050;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #8892b0;
+            font-size: 13px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .form-group input {
+            width: 100%;
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 12px 15px;
+            border-radius: 6px;
+            outline: none;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .form-group input:focus {
+            border-color: #00f2ea;
+            box-shadow: 0 0 10px rgba(0, 242, 234, 0.2);
+        }
+
+        .form-hint {
+            font-size: 11px;
+            color: #666;
+            margin-top: 6px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .modal-actions .btn {
+            flex: 1;
+            padding: 12px;
+        }
+
+        /* Save Button */
+        .save-btn {
+            background: none;
+            border: none;
+            color: #8892b0;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            padding: 5px;
+        }
+
+        .save-btn:hover {
+            color: #00f2ea;
+            transform: scale(1.2);
+        }
+
+        .save-btn.saved {
+            color: #00f2ea;
+        }
+
+        /* Saved Streams Tab */
+        .saved-count {
+            background: #ff0050;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #8892b0;
+        }
+
+        .empty-state-subtext {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #1a1a2e;
+            border: 1px solid #00f2ea;
+            color: #e0e0e0;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            z-index: 3000;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast-icon {
+            font-size: 20px;
+        }
+
+        .toast-message {
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="logo-section">
+            <div class="logo-icon">📡</div>
+            <div class="logo-text">
+                <h1>TikTok Intelligence Monitor</h1>
+                <p>Live Surveillance Dashboard v2.0</p>
+            </div>
+        </div>
+        <div class="header-controls">
+            <div class="search-box">
+                <input type="text" placeholder="Cari streamer atau keyword..." id="searchInput">
+            </div>
+            <button class="btn" onclick="toggleSidebar()">📊 Analytics</button>
+            <button class="btn btn-primary" onclick="addStream()">+ Add Stream</button>
+        </div>
+    </header>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+        <div class="stat-item">
+            <div class="stat-indicator indicator-green"></div>
+            <div>
+                <div class="stat-value" id="activeStreams">24</div>
+                <div class="stat-label">Active Streams</div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-indicator indicator-red"></div>
+            <div>
+                <div class="stat-value" id="totalViewers">1.2M</div>
+                <div class="stat-label">Total Viewers</div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div>
+                <div class="stat-value" id="flaggedContent">7</div>
+                <div class="stat-label">Flagged Content</div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div>
+                <div class="stat-value" id="alertsToday">15</div>
+                <div class="stat-label">Alerts Today</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <div class="filter-chip active" data-view="all">Live Streams</div>
+        <div class="filter-chip" data-view="saved">🔖 Saved <span class="saved-count" id="savedCount">0</span></div>
+        <div class="filter-chip" data-view="high">High Priority</div>
+        <div class="filter-chip" data-view="trending">Trending</div>
+        <div class="filter-chip" data-view="new">New Accounts</div>
+        <div class="filter-chip" data-view="suspicious">Suspicious Activity</div>
+        <div class="filter-chip" data-view="geo">Geographic Filter</div>
+    </div>
+
+    <!-- Monitor Grid -->
+    <div class="monitor-grid" id="streamGrid">
+        <!-- Stream cards will be generated by JavaScript -->
+    </div>
+
+    <!-- Add Stream Modal -->
+    <div class="modal-overlay" id="addStreamModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>➕ Add Live Stream</h2>
+                <button class="modal-close" onclick="closeAddStreamModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label>TikTok Live URL</label>
+                <input type="text" id="streamUrlInput" placeholder="https://www.tiktok.com/@username/live">
+                <div class="form-hint">Tempel URL live TikTok yang ingin dimonitor</div>
+            </div>
+            <div class="form-group">
+                <label>Label / Catatan (Opsional)</label>
+                <input type="text" id="streamLabelInput" placeholder="Contoh: Target intelijen - Jakarta">
+                <div class="form-hint">Tambahkan label untuk memudahkan identifikasi</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeAddStreamModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="addStreamFromUrl()">✅ Add Stream</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <span class="toast-icon" id="toastIcon">✅</span>
+        <span class="toast-message" id="toastMessage"></span>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>Analytics Panel</h2>
+            <button class="close-sidebar" onclick="toggleSidebar()">×</button>
+        </div>
+        <div style="color: #8892b0; font-size: 13px;">
+            <p>Real-time analytics and monitoring data will appear here.</p>
+        </div>
+    </div>
+
+    <script>
+        // Sample stream data
+        const streams = [
+            {
+                id: 1,
+                name: "User_Alpha_99",
+                handle: "@alpha99",
+                title: "Gaming session - Valorant ranked push",
+                viewers: "45.2K",
+                duration: "2:34:12",
+                likes: "128K",
+                comments: "3.2K",
+                tags: ["gaming", "valorant", "ranked"],
+                alert: false,
+                avatar: "A",
+                avatarColor: "linear-gradient(135deg, #ff0050, #00f2ea)",
+                saved: true,
+                priority: "high"
+            },
+            {
+                id: 2,
+                name: "CryptoKing_ID",
+                handle: "@cryptoking",
+                title: "Live trading analysis - BTC update",
+                viewers: "12.8K",
+                duration: "1:15:45",
+                likes: "45K",
+                comments: "1.8K",
+                tags: ["crypto", "trading", "finance"],
+                alert: true,
+                avatar: "C",
+                avatarColor: "linear-gradient(135deg, #ff6b6b, #ee5a6f)",
+                saved: false,
+                priority: "high"
+            },
+            {
+                id: 3,
+                name: "BeautyGuru_JKT",
+                handle: "@beautyjkt",
+                title: "Makeup tutorial - Korean style",
+                viewers: "89.5K",
+                duration: "0:45:23",
+                likes: "256K",
+                comments: "8.9K",
+                tags: ["beauty", "makeup", "tutorial"],
+                alert: false,
+                avatar: "B",
+                avatarColor: "linear-gradient(135deg, #ff9a9e, #fecfef)",
+                saved: true,
+                priority: "normal"
+            },
+            {
+                id: 4,
+                name: "FoodieHunter",
+                handle: "@foodiehun",
+                title: "Street food tour Jakarta malam",
+                viewers: "23.1K",
+                duration: "1:52:08",
+                likes: "67K",
+                comments: "2.1K",
+                tags: ["food", "street", "jakarta"],
+                alert: false,
+                avatar: "F",
+                avatarColor: "linear-gradient(135deg, #fa709a, #fee140)",
+                saved: false,
+                priority: "normal"
+            },
+            {
+                id: 5,
+                name: "TechReviewer_Pro",
+                handle: "@techrevpro",
+                title: "iPhone 15 Pro Max unboxing & review",
+                viewers: "156K",
+                duration: "0:28:45",
+                likes: "412K",
+                comments: "15.3K",
+                tags: ["tech", "iphone", "review"],
+                alert: false,
+                avatar: "T",
+                avatarColor: "linear-gradient(135deg, #30cfd0, #330867)",
+                saved: true,
+                priority: "normal"
+            },
+            {
+                id: 6,
+                name: "MusicLive_Studio",
+                handle: "@musiclive",
+                title: "Acoustic session - Cover songs request",
+                viewers: "34.7K",
+                duration: "3:12:30",
+                likes: "98K",
+                comments: "5.6K",
+                tags: ["music", "acoustic", "live"],
+                alert: false,
+                avatar: "M",
+                avatarColor: "linear-gradient(135deg, #a8edea, #fed6e3)",
+                saved: false,
+                priority: "normal"
+            },
+            {
+                id: 7,
+                name: "FitnessCoach_ID",
+                handle: "@fitcoach",
+                title: "Morning workout routine - Full body",
+                viewers: "18.9K",
+                duration: "0:55:12",
+                likes: "52K",
+                comments: "1.2K",
+                tags: ["fitness", "workout", "health"],
+                alert: false,
+                avatar: "F",
+                avatarColor: "linear-gradient(135deg, #ffecd2, #fcb69f)",
+                saved: false,
+                priority: "normal"
+            },
+            {
+                id: 8,
+                name: "Suspect_Account_X",
+                handle: "@suspectx",
+                title: "Random chat - Q&A session",
+                viewers: "8.3K",
+                duration: "2:05:18",
+                likes: "15K",
+                comments: "890",
+                tags: ["chat", "random"],
+                alert: true,
+                avatar: "S",
+                avatarColor: "linear-gradient(135deg, #ff0000, #cc0000)",
+                saved: true,
+                priority: "high"
+            },
+            {
+                id: 9,
+                name: "TravelVlogger_Bali",
+                handle: "@travelbali",
+                title: "Exploring hidden beaches in Bali",
+                viewers: "67.2K",
+                duration: "1:38:45",
+                likes: "189K",
+                comments: "6.7K",
+                tags: ["travel", "bali", "beach"],
+                alert: false,
+                avatar: "T",
+                avatarColor: "linear-gradient(135deg, #667eea, #764ba2)",
+                saved: false,
+                priority: "normal"
+            },
+            {
+                id: 10,
+                name: "ComedyShow_Live",
+                handle: "@comedyshow",
+                title: "Stand up comedy night - Special guest",
+                viewers: "92.4K",
+                duration: "1:15:22",
+                likes: "278K",
+                comments: "12.1K",
+                tags: ["comedy", "standup", "entertainment"],
+                alert: false,
+                avatar: "C",
+                avatarColor: "linear-gradient(135deg, #f093fb, #f5576c)",
+                saved: false,
+                priority: "normal"
+            },
+            {
+                id: 11,
+                name: "CookingMaster_Chef",
+                handle: "@chefmaster",
+                title: "Resep masakan tradisional Indonesia",
+                viewers: "28.6K",
+                duration: "0:42:15",
+                likes: "73K",
+                comments: "3.4K",
+                tags: ["cooking", "recipe", "indonesian"],
+                alert: false,
+                avatar: "C",
+                avatarColor: "linear-gradient(135deg, #4facfe, #00f2fe)",
+                saved: false,
+                priority: "normal"
+            },
+            {
+                id: 12,
+                name: "PetLover_Daily",
+                handle: "@petlover",
+                title: "Cute cats and dogs compilation live",
+                viewers: "41.3K",
+                duration: "2:20:33",
+                likes: "145K",
+                comments: "7.8K",
+                tags: ["pets", "cats", "dogs"],
+                alert: false,
+                avatar: "P",
+                avatarColor: "linear-gradient(135deg, #43e97b, #38f9d7)",
+                saved: false,
+                priority: "normal"
+            }
+        ];
+
+        let currentView = 'all';
+        let currentSearch = '';
+
+        // Generate stream cards
+        function generateStreamCards() {
+            const grid = document.getElementById('streamGrid');
+            grid.innerHTML = '';
+
+            // Filter streams based on current view and search
+            let visibleStreams = streams;
+
+            if (currentView === 'saved') {
+                visibleStreams = streams.filter(s => s.saved);
+            } else if (currentView === 'high') {
+                visibleStreams = streams.filter(s => s.priority === 'high');
+            } else if (currentView === 'trending') {
+                visibleStreams = streams.filter(s => parseInt(s.viewers.replace('K', '')) > 50);
+            } else if (currentView === 'new') {
+                visibleStreams = streams.filter(s => s.isNew);
+            } else if (currentView === 'suspicious') {
+                visibleStreams = streams.filter(s => s.alert);
+            }
+
+            if (currentSearch) {
+                visibleStreams = visibleStreams.filter(s =>
+                    s.name.toLowerCase().includes(currentSearch) ||
+                    s.handle.toLowerCase().includes(currentSearch) ||
+                    s.title.toLowerCase().includes(currentSearch) ||
+                    (s.label && s.label.toLowerCase().includes(currentSearch)) ||
+                    s.tags.some(tag => tag.toLowerCase().includes(currentSearch))
+                );
+            }
+
+            if (visibleStreams.length === 0) {
+                const emptyState = document.createElement('div');
+                emptyState.className = 'empty-state';
+                emptyState.style.gridColumn = '1 / -1';
+                emptyState.innerHTML = `
+                    <div class="empty-state-icon">🔖</div>
+                    <div class="empty-state-text">${currentView === 'saved' ? 'Belum ada stream yang disimpan' : 'Tidak ada stream ditemukan'}</div>
+                    <div class="empty-state-subtext">${currentView === 'saved' ? 'Klik ikon 🔖 pada stream untuk menyimpannya' : 'Coba kata kunci pencarian lain'}</div>
+                `;
+                grid.appendChild(emptyState);
+                return;
+            }
+
+            visibleStreams.forEach(stream => {
+                const card = document.createElement('div');
+                card.className = 'stream-card';
+                card.innerHTML = `
+                    ${stream.alert ? '<div class="alert-badge">⚠️ ALERT</div>' : ''}
+                    ${stream.label ? `<div class="alert-badge" style="background:#0f3460;top:35px;">${stream.label}</div>` : ''}
+                    <div class="stream-header">
+                        <div class="streamer-info">
+                            <div class="avatar" style="background:${stream.avatarColor || 'linear-gradient(135deg, #ff0050, #00f2ea)'}">${stream.avatar}</div>
+                            <div>
+                                <div class="streamer-name">${stream.name}</div>
+                                <div class="streamer-handle">${stream.handle}</div>
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <button class="save-btn ${stream.saved ? 'saved' : ''}" onclick="toggleSave(${stream.id})" title="${stream.saved ? 'Hapus dari Saved' : 'Simpan ke Saved'}">${stream.saved ? '📌' : '🔖'}</button>
+                            <div class="live-badge">
+                                <div class="live-dot"></div>
+                                LIVE
+                            </div>
+                        </div>
+                    </div>
+                    <div class="video-container">
+                        <div class="video-placeholder">
+                            <div class="play-icon">▶</div>
+                            <div class="duration-badge">${stream.duration}</div>
+                            <div class="viewer-count">
+                                <span class="eye-icon">👁</span>
+                                ${stream.viewers}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stream-meta">
+                        <div class="stream-title">${stream.title}</div>
+                        <div class="stream-tags">
+                            ${stream.tags.map(tag => `<span class="tag">#${tag}</span>`).join('')}
+                        </div>
+                        <div class="stream-stats">
+                            <div class="stat">❤️ ${stream.likes}</div>
+                            <div class="stat">💬 ${stream.comments}</div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        // Open Add Stream modal
+        function addStream() {
+            document.getElementById('addStreamModal').classList.add('active');
+            document.getElementById('streamUrlInput').value = '';
+            document.getElementById('streamLabelInput').value = '';
+            setTimeout(() => document.getElementById('streamUrlInput').focus(), 100);
+        }
+
+        function closeAddStreamModal() {
+            document.getElementById('addStreamModal').classList.remove('active');
+        }
+
+        // Add stream from URL input
+        function addStreamFromUrl() {
+            const url = document.getElementById('streamUrlInput').value.trim();
+            const label = document.getElementById('streamLabelInput').value.trim();
+
+            if (!url) {
+                showToast('⚠️', 'Masukkan URL live TikTok terlebih dahulu');
+                return;
+            }
+
+            // Extract username from URL
+            let username = 'TikTok_Stream';
+            let handle = '@unknown';
+
+            const urlMatch = url.match(/tiktok\.com\/@([^\/\?]+)/);
+            if (urlMatch) {
+                username = urlMatch[1];
+                handle = '@' + urlMatch[1];
+            } else if (url.includes('#')) {
+                const hashPart = url.split('#')[1];
+                if (hashPart) {
+                    username = hashPart;
+                    handle = '@' + hashPart;
+                }
+            }
+
+            const newId = streams.length + 1;
+            const newStream = {
+                id: newId,
+                name: username,
+                handle: handle,
+                title: label ? `${label} - Live stream` : 'New monitored stream',
+                viewers: '0.0K',
+                duration: '0:00:00',
+                likes: '0',
+                comments: '0',
+                tags: ['watched', 'monitor'],
+                alert: false,
+                avatar: username.charAt(0).toUpperCase(),
+                avatarColor: 'linear-gradient(135deg, #00f2ea, #00a8cc)',
+                url: url,
+                saved: true,
+                label: label,
+                source: 'user-added',
+                isNew: true
+            };
+
+            streams.push(newStream);
+            closeAddStreamModal();
+
+            // Show saved view
+            setView('saved');
+            showToast('✅', 'Stream berhasil ditambahkan & masuk ke list Saved');
+            updateSavedCount();
+            generateStreamCards();
+        }
+
+        // Toggle save status
+        function toggleSave(id) {
+            const stream = streams.find(s => s.id === id);
+            if (!stream) return;
+
+            stream.saved = !stream.saved;
+            
+            if (stream.saved) {
+                showToast('📌', `${stream.name} ditambahkan ke Saved`);
+            } else {
+                showToast('🗑️', `${stream.name} dihapus dari Saved`);
+            }
+
+            updateSavedCount();
+            generateStreamCards();
+        }
+
+        // Update saved count
+        function updateSavedCount() {
+            const count = streams.filter(s => s.saved).length;
+            document.getElementById('savedCount').textContent = count;
+            document.getElementById('savedCount').style.display = count > 0 ? 'inline-block' : 'inline-block';
+        }
+
+        // Toast notification
+        let toastTimeout;
+        function showToast(icon, message) {
+            document.getElementById('toastIcon').textContent = icon;
+            document.getElementById('toastMessage').textContent = message;
+            const toast = document.getElementById('toast');
+            toast.classList.add('show');
+            
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Set current view
+        function setView(view) {
+            currentView = view;
+            document.querySelectorAll('.filter-chip').forEach(c => {
+                c.classList.toggle('active', c.dataset.view === view);
+            });
+            generateStreamCards();
+        }
+
+        // Search functionality
+        document.getElementById('searchInput').addEventListener('input', function(e) {
+            currentSearch = e.target.value.toLowerCase();            
+            if (currentView !== 'all' && currentSearch) {
+                // Keep current view but apply search
+            }
+            generateStreamCards();
+        });
+
+        // Filter chips
+        document.querySelectorAll('.filter-chip').forEach(chip => {
+            chip.addEventListener('click', function() {
+                setView(this.dataset.view);
+            });
+        });
+
+        // Enter key on URL input
+        document.getElementById('streamUrlInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addStreamFromUrl();
+            }
+        });
+
+        // Close modal on backdrop click
+        document.getElementById('addStreamModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeAddStreamModal();
+            }
+        });
+
+        // Simulate real-time updates
+        setInterval(() => {
+            // Update viewer counts randomly
+            streams.forEach(stream => {
+                if (stream.source !== 'user-added') {
+                    const base = parseFloat(stream.viewers.replace('K', ''));
+                    const variation = (Math.random() - 0.5) * 2;
+                    const newValue = Math.max(0, base + variation).toFixed(1);
+                    stream.viewers = newValue + 'K';
+                }
+            });
+            
+            // Update stats
+            document.getElementById('activeStreams').textContent = streams.length;
+        }, 5000);
+
+        // Initialize
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                document.getElementById('loadingOverlay').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                }, 500);
+            }, 1000);
+            
+            updateSavedCount();
+            generateStreamCards();
+        });
+    </script>
+</body>
+</html>
