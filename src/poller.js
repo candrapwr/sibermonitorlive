@@ -15,6 +15,11 @@ const YOUTUBE_GAP_MS = 400;   // jeda antar cek YouTube
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Anti flip-flop: stream LIVE yang dilaporkan offline baru diyakini setelah
+// 2x bukti BERTURUT-TURUT. Verdict offline pertama ditahan (status & playback
+// URL lama dipertahankan) — satu cek gagal parse tidak bisa mematikan stream.
+const offlineStreak = new Map(); // stream id → jumlah cek offline berturut-turut
+
 /** Cek satu stream via provider yang sesuai → info terbaru. */
 async function fetchStreamInfo(stream) {
   if (stream.platform === 'tiktok') return tiktok.getStreamInfo(stream.source_key);
@@ -31,6 +36,19 @@ async function refreshStream(id) {
   if (!stream) return null;
   try {
     const info = await fetchStreamInfo(stream);
+
+    // Transisi live → offline butuh konfirmasi (lihat offlineStreak)
+    if (!info.is_live && stream.is_live) {
+      const streak = (offlineStreak.get(id) || 0) + 1;
+      offlineStreak.set(id, streak);
+      if (streak < 2) {
+        db.updateStreamState(id, { error: 'Terdeteksi offline 1x — menunggu konfirmasi cek berikutnya' });
+        return db.getStream(id);
+      }
+    }
+    if (info.is_live) offlineStreak.delete(id);
+    else offlineStreak.delete(id); // offline terkonfirmasi → reset penanda
+
     db.updateStreamState(id, {
       is_live: !!info.is_live,
       viewers: info.viewers ?? 0,

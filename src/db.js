@@ -316,8 +316,11 @@ function updateStreamState(id, state) {
       playback_flv_url = ?
     WHERE id = ?
   `).run(
-    state.is_live ? 1 : 0,
-    state.viewers ?? 0,
+    // Field yang tidak disebut dipertahankan — penting untuk pemanggilan
+    // "update parsial" (mis. hanya {error}): status live/viewer/URL playback
+    // TIDAK boleh ikut ter-reset saat sebuah cek gagal.
+    state.is_live === undefined ? s.is_live : (state.is_live ? 1 : 0),
+    state.viewers === undefined ? s.viewers : state.viewers,
     state.title ?? s.title,
     state.display_name ?? s.display_name,
     state.handle ?? s.handle,

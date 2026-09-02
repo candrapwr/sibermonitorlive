@@ -275,6 +275,12 @@ async function getStreamInfo(videoId) {
   }
 
   if (!info.title) throw new Error('Video YouTube tidak ditemukan atau privat');
+
+  // Struktur halaman tidak dikenali (consent-wall, perubahan markup, dsb.) →
+  // jangan diam-diam tandai offline; lempar error agar status lama dipertahankan
+  if (!data && !player) {
+    throw new Error('Struktur halaman YouTube tidak dikenali — status dipertahankan');
+  }
   return info;
 }
 

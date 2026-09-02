@@ -434,6 +434,7 @@ function cardHtml(item, monitored) {
     const actions = monitored
         ? (isAdmin()
             ? `
+        <button class="icon-btn" onclick="refreshStreamNow(${item.id})" title="Cek ulang status sekarang">🔄</button>
         <button class="icon-btn" onclick="openCatAssign(${item.id})" title="Set kategori">🗂</button>
         <button class="icon-btn ${item.priority === 'high' ? 'flagged' : ''}"
                 onclick="togglePriority(${item.id})" title="Toggle High Priority">${item.priority === 'high' ? '🚩' : '🏳'}</button>
@@ -598,6 +599,23 @@ function closePlayer(key) {
     if (state.players.size === 0) {
         render();
         maybeAutoReload(); // versi app.js baru menunggu → aman reload sekarang
+    }
+}
+
+/** Paksa cek ulang satu stream (admin) — untuk koreksi status manual. */
+async function refreshStreamNow(id) {
+    const btns = document.querySelectorAll(`#card-s-${id} .icon-btn[onclick^="refreshStreamNow"]`);
+    btns.forEach(b => { b.textContent = '⏳'; b.disabled = true; });
+    try {
+        await api(`/api/streams/${id}/refresh`, { method: 'POST' });
+        await loadStreams();
+        render();
+        const s = state.streams.find(x => x.id === id);
+        showToast(s && s.is_live ? '🔴' : '⚪',
+            s ? `${s.handle || s.source_key}: ${s.is_live ? 'LIVE' : 'offline'}` : 'Cek selesai');
+    } catch (err) {
+        showToast('❌', err.message, true);
+        btns.forEach(b => { b.textContent = '🔄'; b.disabled = false; });
     }
 }
 

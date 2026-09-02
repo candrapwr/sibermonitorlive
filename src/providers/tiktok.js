@@ -150,6 +150,18 @@ function parseUrl(url) {
   return null;
 }
 
+/**
+ * Bukti eksplisit room sudah selesai: response room/enter membalas
+ * { status_code: 30003, data: { message: "room has finished" } } —
+ * halaman TIDAK redirect (sesi login), jadi ini satu-satunya penanda
+ * offline yang pasti untuk user yang benar-benar sudah tamat.
+ */
+function isRoomFinished(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  const msg = String(payload?.data?.message || '');
+  return payload?.status_code === 30003 || /has finished|telah berakhir/i.test(msg);
+}
+
 /* ------------------------------------------------------------------ */
 /* Info live per username                                              */
 /* ------------------------------------------------------------------ */
@@ -185,24 +197,42 @@ async function getStreamInfo(username) {
       });
 
       const deadline = Date.now() + WAIT_ROOM_MS;
-      let info = null;
+      let milikTarget = null;   // room milik user target (bukti terkuat)
+      let roomLiveLain = null;  // room live lain — halaman /live diarahkan ke sana (mis. co-host)
+      let selesai = false;      // bukti eksplisit "room has finished" (offline pasti)
       while (Date.now() < deadline) {
         await page.waitForTimeout(800);
         await Promise.allSettled(pending);
         for (const payload of captured) {
-          const normalized = normalizeRoom(payload, username);
-          if (!normalized) continue;
-          // Pastikan room ini milik user target (bukan saran lain),
-          // kecuali payload berasal dari enter/info milik halaman tsb.
-          if (normalized.is_live) { info = normalized; break; }
-          if (!info) info = normalized; // simpan offline/offline-ish pertama
+          if (isRoomFinished(payload)) { selesai = true; continue; }
+          const n = normalizeRoom(payload, username);
+          if (!n) continue;
+          if (n.source_key === String(username).toLowerCase()) {
+            if (!milikTarget || n.is_live) milikTarget = n;
+          } else if (n.is_live && !roomLiveLain) {
+            roomLiveLain = n; // saran/co-host — hanya fallback, jangan bajak status
+          }
         }
-        if (info && info.is_live) break;
+        if ((milikTarget && milikTarget.is_live) || selesai) break;
         await page.waitForTimeout(700);
       }
 
-      // User offline → TikTok redirect ke halaman discover: balas info offline minimal
-      return info || offlineInfo(username);
+      // Prioritas: payload milik target → room live tempat halaman diarahkan
+      // (co-host) → bukti "room has finished" → offline
+      if (milikTarget) return milikTarget;
+      if (roomLiveLain) return roomLiveLain;
+      if (selesai) return offlineInfo(username);
+
+      // Tidak ada payload room sama sekali → dua kemungkinan:
+      // - halaman meninggalkan /@user/live (redirect discover/profil) → offline
+      // - masih di halaman live tapi data room tidak datang (hiccup anti-bot) →
+      //   LEMPAR error agar poller MEMPERTAHANKAN status lama, bukan salah
+      //   menandai offline padahal user masih live
+      const masihDiHalaman = page.url().toLowerCase().includes(`/${username}/live`);
+      if (masihDiHalaman) {
+        throw new Error('Data room tidak tertangkap (halaman tidak merespons normal) — status dipertahankan');
+      }
+      return offlineInfo(username);
     } finally {
       await Promise.allSettled(pending).catch(() => {});
       await page.close().catch(() => {});
