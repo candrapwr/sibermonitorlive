@@ -333,7 +333,9 @@ function updateStreamState(id, state) {
     state.handle ?? s.handle,
     state.avatar_url ?? s.avatar_url,
     state.cover_url ?? s.cover_url,
-    state.started_at ?? s.started_at,
+    // TikTok private biasanya tidak mengirim waktu mulai; jangan tampilkan
+    // durasi live lama yang tersisa dari sesi publik sebelumnya.
+    (state.private_live === true || state.private_live === 1) ? null : (state.started_at ?? s.started_at),
     Date.now(),
     state.error || null,
     // LIVE private tidak boleh mewarisi URL signed lama dari sesi publik.
