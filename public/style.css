@@ -385,16 +385,6 @@ body {
     border-radius: 50%;
 }
 
-.private-badge {
-    background: rgba(255, 179, 71, 0.16);
-    border: 1px solid rgba(255, 179, 71, 0.65);
-    color: #ffca78;
-    padding: 3px 7px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: bold;
-}
-
 .offline-badge {
     background: #2a2a3e;
     color: #8892b0;

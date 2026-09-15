@@ -473,7 +473,7 @@ function cardHtml(item, monitored) {
             <div class="card-actions">
                 ${actions}
                 ${live
-                    ? `<div class="live-badge"><div class="live-dot"></div>LIVE</div>${privateLive ? '<div class="private-badge">🔒 PRIVATE</div>' : ''}`
+                    ? `<div class="live-badge" title="${privateLive ? 'LIVE private — playback tidak tersedia' : 'LIVE'}"><div class="live-dot"></div>${privateLive ? '🔒 ' : ''}LIVE</div>`
                     : '<div class="offline-badge">OFFLINE</div>'}
             </div>
         </div>
