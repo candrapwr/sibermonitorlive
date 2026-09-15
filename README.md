@@ -36,7 +36,8 @@ Cocok banget kalau Anda butuh:
 
 ## 🚀 Mulai cepat
 
-Prasyarat: **Node.js ≥ 20** dan Chromium Playwright.
+Prasyarat: **Node.js ≥ 22.5** dan Chromium Playwright (Chromium hanya
+diperlukan untuk pencarian keyword TikTok dan fitur login TikTok).
 
 ```bash
 # 1. Clone & install
@@ -44,7 +45,7 @@ git clone https://github.com/candrapwr/sibermonitor-live.git
 cd sibermonitor-live
 npm install
 
-# 2. Download browser engine (sekali saja, ±170MB)
+# 2. Download browser engine (sekali saja, ±170MB; untuk search/login TikTok)
 npx playwright install chromium
 
 # 3. Jalankan (ganti password admin!)
@@ -204,14 +205,14 @@ Semua endpoint (kecuali `login` & `health`) butuh cookie session. **[A]** = khus
 |---|---|
 | Server | Node.js + Express |
 | Database | SQLite (better-sqlite3, WAL) |
-| Engine monitoring | Playwright Chromium (persistent profile, antrean sekuensial) |
+| Engine monitoring | TikTok status via HTTP ringan; YouTube via HTTP; Playwright Chromium hanya untuk search TikTok/login |
 | Player | hls.js + mpegts.js (self-hosted), YouTube embed |
 | Frontend | Vanilla JS + CSS (tanpa framework, tema gelap) |
 
 ```
 server.js                 # Express: API + auth + guard + startup cleanup
 src/db.js                 # SQLite: schema, migrasi, CRUD
-src/browser.js            # Engine browser: persistent context + kill basi saat start
+src/browser.js            # Browser search/login TikTok + kill proses basi saat start
 src/poller.js             # Loop refresh berkala
 src/providers/            # Adapter per platform (tiktok, youtube, util)
 public/                   # Frontend + vendor player

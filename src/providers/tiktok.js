@@ -1,27 +1,32 @@
 /**
- * Provider TikTok Live — tanpa API resmi, via Playwright (Chromium headless).
+ * Provider TikTok Live — tanpa API resmi.
  *
- * Kenapa browser: halaman live TikTok dirender via JS dan request datanya
- * bersignature (msToken/X-Bogus), sehingga HTTP biasa hanya mendapat shell
- * kosong (sudah diverifikasi). Browser asli menjalankan JS TikTok sehingga
- * signature dibuat otomatis.
+ * Pengecekan status per username memakai endpoint HTTP ringan
+ * `/api-live/user/room/`. Endpoint ini mengembalikan status akun, metadata
+ * room, dan kadang URL playback tanpa perlu membuka Chromium.
+ *
+ * Playwright tetap dipakai khusus untuk pencarian keyword TikTok karena
+ * halaman `/search/live` dapat meminta login dan membutuhkan browser untuk
+ * menangkap response internalnya.
  *
  * Temuan penting (diverifikasi langsung):
- * - Room info live ada di response XHR `webcast/room/enter/` (JSON besar,
- *   field snake_case: title, status, user_count, like_count, start_time,
- *   owner.display_id, owner.avatar_*, cover.url_list). status=2 = LIVE.
- * - Halaman /@user/live & discover /live bisa diakses TANPA login.
- * - Pencarian keyword (/search/live) DIBUTUHKAN login — jika terkena login
- *   wall, otomatis fallback ke daftar LIVE trending (discover) + filter
- *   keyword pada nama. Login opsional via `npm run login`.
- * - Response /webcast/feed/ berisi kamar user LAIN — sengaja TIDAK
- *   dipakai untuk status user agar tidak salah attribusi.
+ * - Pada endpoint ini `user.status=2` berarti LIVE dan `user.status=4`
+ *   berarti OFFLINE.
+ * - LIVE private dapat terdeteksi dari status=2 meski liveRoom tidak memberi
+ *   URL playback; status tetap LIVE, hanya player yang tidak tersedia.
+ * - Pencarian keyword (/search/live) tetap membutuhkan browser/session — jika
+ *   terkena login wall, otomatis fallback ke daftar LIVE trending (discover).
+ *   Login opsional via `npm run login`.
  */
 const { withContext } = require('../browser');
-const { deepFind, deepFindAll, parseCount } = require('./util');
+const { fetchWithUA, deepFind, deepFindAll, parseCount } = require('./util');
 
 const GOTO_TIMEOUT = 45000;
 const WAIT_ROOM_MS = 15000;
+const LIVE_API_TIMEOUT = 15000;
+const LIVE_API_AID = 1988;
+const LIVE_API_SOURCE_TYPE = 54;
+const PLAYBACK_QUALITY_ORDER = ['origin', 'hd', 'sd', 'ld', 'ao'];
 
 /* ------------------------------------------------------------------ */
 /* Helper ekstraksi                                                    */
@@ -30,7 +35,7 @@ const WAIT_ROOM_MS = 15000;
 /** Cari URL gambar pertama di dalam objek sembarang. */
 function extractUrl(obj) {
   if (!obj || typeof obj !== 'object') return undefined;
-  for (const key of ['urls', 'url_list']) {
+  for (const key of ['urls', 'url_list', 'urlList']) {
     if (Array.isArray(obj[key])) {
       const found = obj[key].find(u => typeof u === 'string' && u.startsWith('http'));
       if (found) return found;
@@ -64,6 +69,118 @@ function extractFlvUrl(room) {
   return undefined;
 }
 
+/** Parse JSON yang kadang dikirim TikTok sebagai string JSON bersarang. */
+function parseMaybeJson(value) {
+  if (value && typeof value === 'object') return value;
+  if (typeof value !== 'string' || !value) return null;
+
+  try { return JSON.parse(value); } catch (_) { /* coba bentuk escaped */ }
+  try {
+    return JSON.parse(value.replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
+  } catch (_) { /* bukan JSON yang bisa dipakai */ }
+  return null;
+}
+
+/** Ambil URL playback terbaik dari format stream_data API ringan TikTok. */
+function extractApiPlayback(liveRoom) {
+  const sources = [
+    liveRoom?.streamData?.pull_data?.stream_data,
+    liveRoom?.hevcStreamData?.pull_data?.stream_data,
+    liveRoom?.stream_data?.pull_data?.stream_data,
+    liveRoom?.hevc_stream_data?.pull_data?.stream_data
+  ];
+  let hls;
+  let flv;
+
+  for (const raw of sources) {
+    const parsed = parseMaybeJson(raw);
+    const qualities = parsed?.data || {};
+    for (const quality of PLAYBACK_QUALITY_ORDER) {
+      const main = qualities?.[quality]?.main;
+      if (!main) continue;
+      if (!hls && typeof main.hls === 'string' && /^https?:\/\//.test(main.hls)) hls = main.hls;
+      if (!flv && typeof main.flv === 'string' && /^https?:\/\//.test(main.flv)) flv = main.flv;
+      if (hls && flv) return { playback_url: hls, playback_flv_url: flv };
+    }
+  }
+  return { playback_url: hls, playback_flv_url: flv };
+}
+
+/** Ambil data status live dari endpoint HTTP tanpa membuka browser. */
+async function fetchLiveApi(username) {
+  const url = `https://www.tiktok.com/api-live/user/room/?aid=${LIVE_API_AID}`
+    + `&uniqueId=${encodeURIComponent(username)}&sourceType=${LIVE_API_SOURCE_TYPE}`;
+  const res = await fetchWithUA(url, {
+    timeout: LIVE_API_TIMEOUT,
+    headers: {
+      Referer: 'https://www.tiktok.com/',
+      Accept: 'application/json, text/plain, */*'
+    }
+  });
+  if (!res.ok) throw new Error(`TikTok live API HTTP ${res.status}`);
+  try {
+    return await res.json();
+  } catch (_) {
+    throw new Error('Respons TikTok live API bukan JSON yang valid');
+  }
+}
+
+function isLiveStatus(value) {
+  return String(value) === '2';
+}
+
+function toStartedAt(value) {
+  if (!Number.isFinite(Number(value)) || Number(value) <= 0) return undefined;
+  const n = Number(value);
+  return n < 1e12 ? n * 1000 : n;
+}
+
+/** Normalisasi response /api-live/user/room/ menjadi info standar aplikasi. */
+function normalizeLiveApi(payload, fallbackUsername) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Struktur response TikTok live API tidak dikenali');
+  }
+  if (payload.data == null && /user[_ ]not[_ ]found|not found/i.test(String(payload.message || ''))) {
+    return offlineInfo(fallbackUsername);
+  }
+  if (!payload.data || typeof payload.data !== 'object') {
+    throw new Error('Struktur response TikTok live API tidak dikenali');
+  }
+
+  const user = payload.data.user;
+  if (!user || typeof user !== 'object') return offlineInfo(fallbackUsername);
+
+  const liveRoom = payload.data.liveRoom || payload.data.live_room || null;
+  const status = user.status ?? user.liveStatus ?? user.live_status;
+  const liveStatus = liveRoom?.status ?? liveRoom?.status2;
+  const isLive = isLiveStatus(status) || isLiveStatus(liveStatus);
+  const handle = String(user.uniqueId || user.unique_id || user.displayId || fallbackUsername).toLowerCase();
+  const playback = isLive ? extractApiPlayback(liveRoom) : {};
+  const viewers = liveRoom?.liveRoomStats?.userCount
+    ?? liveRoom?.live_room_stats?.user_count
+    ?? liveRoom?.userCount
+    ?? 0;
+
+  return {
+    platform: 'tiktok',
+    source_key: handle,
+    url: `https://www.tiktok.com/@${handle}/live`,
+    room_id: String(user.roomId || liveRoom?.roomId || liveRoom?.room_id || ''),
+    title: liveRoom?.title || undefined,
+    is_live: isLive,
+    viewers: isLive ? (parseCount(viewers) || 0) : 0,
+    display_name: user.nickname || handle,
+    handle: '@' + handle,
+    avatar_url: extractBestImage(user, AVATAR_HINTS),
+    cover_url: extractBestImage(liveRoom, COVER_HINTS),
+    started_at: toStartedAt(liveRoom?.startTime ?? liveRoom?.start_time),
+    ...playback,
+    // true berarti akun sedang live tetapi TikTok tidak memberikan URL
+    // playback; ini lazim pada live private/tertutup.
+    private_live: isLive && !playback.playback_url && !playback.playback_flv_url
+  };
+}
+
 /** Handle user: uniqueId (camel) / display_id (snake) / unique_id. */
 function userHandle(owner) {
   return owner?.uniqueId || owner?.display_id || owner?.unique_id || '';
@@ -80,46 +197,6 @@ function isRoomObject(n) {
   return (n.userCount != null || n.user_count != null) &&
     (n.status != null || n.status2 != null) &&
     (typeof n.title === 'string' || n.id != null || n.room_id != null);
-}
-
-/** Normalisasi payload room (response webcast room/enter|info) → info standar. */
-function normalizeRoom(payload, fallbackUsername) {
-  if (!payload) return null;
-  const room = deepFind(payload, isRoomObject);
-  if (room) {
-    const owner = (room.owner && isUserObject(room.owner)) ? room.owner
-      : (room.user && isUserObject(room.user)) ? room.user
-      : (payload.owner && isUserObject(payload.owner)) ? payload.owner
-      : (payload.user && isUserObject(payload.user)) ? payload.user
-      : null;
-    const status = room.status2 ?? room.status;
-    const startedMs = room.start_time ? room.start_time * 1000
-      : room.startTime ? room.startTime
-      : room.create_time ? room.create_time * 1000
-      : undefined;
-    const likes = room.like_count ?? room.totalLikeCount ?? room.likeCount ?? room.likes;
-    const handle = userHandle(owner) || (fallbackUsername || '');
-    return {
-      platform: 'tiktok',
-      source_key: handle.toLowerCase(),
-      url: `https://www.tiktok.com/@${handle}/live`,
-      room_id: String(room.id_str ?? room.id ?? room.room_id ?? ''),
-      title: room.title || undefined,
-      is_live: String(status) === '2',
-      viewers: parseCount(room.userCount ?? room.user_count ?? 0) || 0,
-      display_name: owner?.nickname || undefined,
-      handle: handle ? '@' + handle : undefined,
-      avatar_url: extractBestImage(owner, AVATAR_HINTS),
-      cover_url: extractBestImage(room, COVER_HINTS),
-      started_at: startedMs,
-      likes: likes != null ? parseCount(likes) : undefined,
-      // HLS bertanda tangan dari CDN TikTok — bisa diputar langsung di player (hls.js)
-      playback_url: room.stream_url?.hls_pull_url || undefined,
-      // Fallback FLV: sebagian room (mis. multi-host) hanya menyediakan FLV
-      playback_flv_url: extractFlvUrl(room)
-    };
-  }
-  return null;
 }
 
 /** Info minimal saat user offline (tidak ada room payload sama sekali). */
@@ -150,94 +227,17 @@ function parseUrl(url) {
   return null;
 }
 
-/**
- * Bukti eksplisit room sudah selesai: response room/enter membalas
- * { status_code: 30003, data: { message: "room has finished" } } —
- * halaman TIDAK redirect (sesi login), jadi ini satu-satunya penanda
- * offline yang pasti untuk user yang benar-benar sudah tamat.
- */
-function isRoomFinished(payload) {
-  if (!payload || typeof payload !== 'object') return false;
-  const msg = String(payload?.data?.message || '');
-  return payload?.status_code === 30003 || /has finished|telah berakhir/i.test(msg);
-}
-
 /* ------------------------------------------------------------------ */
 /* Info live per username                                              */
 /* ------------------------------------------------------------------ */
 
 async function getStreamInfo(username) {
-  return withContext(async (ctx) => {
-    const page = await ctx.newPage();
-    // Hemat bandwidth: blokir media/video, gambar tetap diizinkan
-    await page.route('**/*', (route) => {
-      if (route.request().resourceType() === 'media') return route.abort();
-      return route.continue();
-    });
-
-    const captured = [];
-    const pending = [];
-    page.on('response', (res) => {
-      const url = res.url();
-      // HANYA room enter/info milik user target (bukan feed user lain)
-      if (/\/webcast\/room\/(enter|info|reflow)/.test(url)) {
-        pending.push((async () => {
-          try {
-            const json = await res.json();
-            if (json) captured.push(json);
-          } catch (_) { /* bukan JSON — abaikan */ }
-        })());
-      }
-    });
-
-    try {
-      await page.goto(`https://www.tiktok.com/@${encodeURIComponent(username)}/live`, {
-        waitUntil: 'domcontentloaded',
-        timeout: GOTO_TIMEOUT
-      });
-
-      const deadline = Date.now() + WAIT_ROOM_MS;
-      let milikTarget = null;   // room milik user target (bukti terkuat)
-      let roomLiveLain = null;  // room live lain — halaman /live diarahkan ke sana (mis. co-host)
-      let selesai = false;      // bukti eksplisit "room has finished" (offline pasti)
-      while (Date.now() < deadline) {
-        await page.waitForTimeout(800);
-        await Promise.allSettled(pending);
-        for (const payload of captured) {
-          if (isRoomFinished(payload)) { selesai = true; continue; }
-          const n = normalizeRoom(payload, username);
-          if (!n) continue;
-          if (n.source_key === String(username).toLowerCase()) {
-            if (!milikTarget || n.is_live) milikTarget = n;
-          } else if (n.is_live && !roomLiveLain) {
-            roomLiveLain = n; // saran/co-host — hanya fallback, jangan bajak status
-          }
-        }
-        if ((milikTarget && milikTarget.is_live) || selesai) break;
-        await page.waitForTimeout(700);
-      }
-
-      // Prioritas: payload milik target → room live tempat halaman diarahkan
-      // (co-host) → bukti "room has finished" → offline
-      if (milikTarget) return milikTarget;
-      if (roomLiveLain) return roomLiveLain;
-      if (selesai) return offlineInfo(username);
-
-      // Tidak ada payload room sama sekali → dua kemungkinan:
-      // - halaman meninggalkan /@user/live (redirect discover/profil) → offline
-      // - masih di halaman live tapi data room tidak datang (hiccup anti-bot) →
-      //   LEMPAR error agar poller MEMPERTAHANKAN status lama, bukan salah
-      //   menandai offline padahal user masih live
-      const masihDiHalaman = page.url().toLowerCase().includes(`/${username}/live`);
-      if (masihDiHalaman) {
-        throw new Error('Data room tidak tertangkap (halaman tidak merespons normal) — status dipertahankan');
-      }
-      return offlineInfo(username);
-    } finally {
-      await Promise.allSettled(pending).catch(() => {});
-      await page.close().catch(() => {});
-    }
-  });
+  // Status polling sengaja tidak melalui withContext/Chromium. Selain lebih
+  // ringan, endpoint ini bisa membedakan live private: user.status tetap 2
+  // walaupun liveRoom tidak menyediakan URL playback.
+  const normalizedUsername = String(username).replace(/^@/, '').toLowerCase();
+  const payload = await fetchLiveApi(normalizedUsername);
+  return normalizeLiveApi(payload, normalizedUsername);
 }
 
 /* ------------------------------------------------------------------ */

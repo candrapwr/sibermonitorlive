@@ -669,15 +669,24 @@ async function resolveAndPlay(key, item) {
         <div class="player-loading">
             <div class="loading-spinner"></div>
             <p>Mengambil sinyal TikTok…</p>
-            <small>±10–15 detik (resolve via browser headless)</small>
+            <small>mengambil status dan URL playback via HTTP ringan</small>
         </div>`;
     try {
         const info = await api('/api/resolve', { method: 'POST', body: JSON.stringify({ url: item.url }) });
         if (!info.is_live) throw new Error('Stream sudah selesai / offline');
-        if (!info.playback_url) throw new Error('URL stream tidak tersedia dari TikTok');
+        if (!info.playback_url && !info.playback_flv_url) {
+            throw new Error('LIVE, tetapi URL playback tidak tersedia — kemungkinan live private');
+        }
         item.playback_url = info.playback_url;
+        item.playback_flv_url = info.playback_flv_url;
         if (!state.players.has(key) && document.getElementById('vc-' + key)) {
-            state.players.set(key, { key, platform: 'tiktok', hlsUrl: info.playback_url, url: item.url });
+            state.players.set(key, {
+                key,
+                platform: 'tiktok',
+                hlsUrl: info.playback_url,
+                flvUrl: info.playback_flv_url,
+                url: item.url
+            });
             attachPlayer(state.players.get(key));
         }
     } catch (err) {
