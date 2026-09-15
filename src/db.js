@@ -336,8 +336,9 @@ function updateStreamState(id, state) {
     state.started_at ?? s.started_at,
     Date.now(),
     state.error || null,
-    state.playback_url ?? s.playback_url,
-    state.playback_flv_url ?? s.playback_flv_url,
+    // LIVE private tidak boleh mewarisi URL signed lama dari sesi publik.
+    (state.private_live === true || state.private_live === 1) ? null : (state.playback_url ?? s.playback_url),
+    (state.private_live === true || state.private_live === 1) ? null : (state.playback_flv_url ?? s.playback_flv_url),
     id
   );
   return getStream(id);

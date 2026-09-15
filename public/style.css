@@ -282,7 +282,7 @@ body {
     width: 100%;
 }
 
-.streamer-info > div {
+.streamer-info > div:not(.avatar) {
     min-width: 0;
     flex: 1 1 auto;
 }
@@ -290,6 +290,7 @@ body {
 .avatar {
     width: 28px;
     height: 28px;
+    flex: 0 0 28px;
     border-radius: 50%;
     background: linear-gradient(135deg, #ff0050, #00f2ea);
     display: flex;
