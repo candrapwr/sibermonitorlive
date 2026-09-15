@@ -429,6 +429,7 @@ function cardHtml(item, monitored) {
     const name = item.display_name || item.handle || item.source_key || 'Unknown';
     const initial = esc(String(name).charAt(0).toUpperCase());
     const live = !!item.is_live;
+    const privateLive = item.platform === 'tiktok' && live && !!item.private_live;
     const key = monitored ? 's-' + item.id : 'r-' + item._idx;
 
     const actions = monitored
@@ -472,7 +473,7 @@ function cardHtml(item, monitored) {
             <div class="card-actions">
                 ${actions}
                 ${live
-                    ? '<div class="live-badge"><div class="live-dot"></div>LIVE</div>'
+                    ? `<div class="live-badge"><div class="live-dot"></div>LIVE</div>${privateLive ? '<div class="private-badge">🔒 PRIVATE</div>' : ''}`
                     : '<div class="offline-badge">OFFLINE</div>'}
             </div>
         </div>

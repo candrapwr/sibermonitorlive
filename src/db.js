@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS streams (
   saved          INTEGER NOT NULL DEFAULT 1,
   -- state terbaru (denormalisasi agar list cepat)
   is_live        INTEGER NOT NULL DEFAULT 0,
+  private_live   INTEGER NOT NULL DEFAULT 0,
   viewers        INTEGER NOT NULL DEFAULT 0,
   title          TEXT,
   display_name   TEXT,
@@ -73,6 +74,10 @@ try {
 // Migrasi: fallback FLV (sebagian room TikTok hanya menyediakan FLV, tanpa HLS)
 try {
   db.exec('ALTER TABLE streams ADD COLUMN playback_flv_url TEXT');
+} catch (_) { /* kolom sudah ada */ }
+// Migrasi: TikTok LIVE private terdeteksi tetapi tidak punya URL playback
+try {
+  db.exec('ALTER TABLE streams ADD COLUMN private_live INTEGER NOT NULL DEFAULT 0');
 } catch (_) { /* kolom sudah ada */ }
 
 /* Pengguna, sesi login, dan kategori (portal multi-user) */
@@ -258,7 +263,7 @@ function migrateStreamsOwner(adminId) {
 
 const STREAM_COLS = `
   s.id, s.platform, s.source_key, s.url, s.label, s.priority, s.saved,
-  s.is_live, s.viewers, s.title, s.display_name, s.handle, s.avatar_url, s.cover_url,
+  s.is_live, s.private_live, s.viewers, s.title, s.display_name, s.handle, s.avatar_url, s.cover_url,
   s.started_at, s.last_checked, s.last_error, s.created_at, s.playback_url, s.playback_flv_url,
   s.created_by, s.category_id, c.name AS category_name
 `;
@@ -303,6 +308,7 @@ function updateStreamState(id, state) {
   db.prepare(`
     UPDATE streams SET
       is_live      = ?,
+      private_live = ?,
       viewers      = ?,
       title        = ?,
       display_name = ?,
@@ -320,6 +326,7 @@ function updateStreamState(id, state) {
     // "update parsial" (mis. hanya {error}): status live/viewer/URL playback
     // TIDAK boleh ikut ter-reset saat sebuah cek gagal.
     state.is_live === undefined ? s.is_live : (state.is_live ? 1 : 0),
+    state.private_live === undefined ? s.private_live : (state.private_live ? 1 : 0),
     state.viewers === undefined ? s.viewers : state.viewers,
     state.title ?? s.title,
     state.display_name ?? s.display_name,

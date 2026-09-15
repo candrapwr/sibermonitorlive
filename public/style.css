@@ -269,8 +269,8 @@ body {
     background: #1a1a2e;
     padding: 7px 9px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 6px;
 }
 
@@ -279,6 +279,12 @@ body {
     align-items: center;
     gap: 7px;
     min-width: 0;
+    width: 100%;
+}
+
+.streamer-info > div {
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .avatar {
@@ -309,7 +315,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 105px;
+    max-width: 100%;
 }
 
 .streamer-handle {
@@ -318,14 +324,16 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 105px;
+    max-width: 100%;
 }
 
 .card-actions {
     display: flex;
     align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 3px;
+    width: 100%;
 }
 
 .icon-btn {
@@ -374,6 +382,16 @@ body {
     height: 5px;
     background: white;
     border-radius: 50%;
+}
+
+.private-badge {
+    background: rgba(255, 179, 71, 0.16);
+    border: 1px solid rgba(255, 179, 71, 0.65);
+    color: #ffca78;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: bold;
 }
 
 .offline-badge {

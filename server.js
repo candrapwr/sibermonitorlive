@@ -188,6 +188,7 @@ function sanitizeInfo(raw, url) {
     source_key: s(raw.source_key),
     url: s(raw.url) || String(url).trim(),
     is_live: !!raw.is_live,
+    private_live: !!raw.private_live,
     viewers: n(raw.viewers),
     title: s(raw.title),
     display_name: s(raw.display_name),
@@ -358,6 +359,7 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
     });
     const refreshed = db.updateStreamState(existing.id, {
       is_live: !!info.is_live,
+      private_live: !!info.private_live,
       viewers: info.viewers ?? 0,
       title: info.title,
       display_name: info.display_name,
@@ -386,6 +388,7 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
   });
   stream = db.updateStreamState(stream.id, {
     is_live: !!info.is_live,
+    private_live: !!info.private_live,
     viewers: info.viewers ?? 0,
     title: info.title,
     display_name: info.display_name,

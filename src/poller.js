@@ -51,6 +51,7 @@ async function refreshStream(id) {
 
     db.updateStreamState(id, {
       is_live: !!info.is_live,
+      private_live: !!info.private_live,
       viewers: info.viewers ?? 0,
       title: info.title,
       display_name: info.display_name,
