@@ -79,6 +79,10 @@ try {
 try {
   db.exec('ALTER TABLE streams ADD COLUMN private_live INTEGER NOT NULL DEFAULT 0');
 } catch (_) { /* kolom sudah ada */ }
+// Migrasi: daftar kandidat playback (failover multi kualitas, JSON)
+try {
+  db.exec('ALTER TABLE streams ADD COLUMN playback_candidates TEXT');
+} catch (_) { /* kolom sudah ada */ }
 
 /* Pengguna, sesi login, dan kategori (portal multi-user) */
 db.exec(`
@@ -264,7 +268,7 @@ function migrateStreamsOwner(adminId) {
 const STREAM_COLS = `
   s.id, s.platform, s.source_key, s.url, s.label, s.priority, s.saved,
   s.is_live, s.private_live, s.viewers, s.title, s.display_name, s.handle, s.avatar_url, s.cover_url,
-  s.started_at, s.last_checked, s.last_error, s.created_at, s.playback_url, s.playback_flv_url,
+  s.started_at, s.last_checked, s.last_error, s.created_at, s.playback_url, s.playback_flv_url, s.playback_candidates,
   s.created_by, s.category_id, c.name AS category_name
 `;
 const STREAM_FROM = `FROM streams s LEFT JOIN categories c ON c.id = s.category_id`;
@@ -319,7 +323,8 @@ function updateStreamState(id, state) {
       last_checked = ?,
       last_error   = ?,
       playback_url = ?,
-      playback_flv_url = ?
+      playback_flv_url = ?,
+      playback_candidates = ?
     WHERE id = ?
   `).run(
     // Field yang tidak disebut dipertahankan — penting untuk pemanggilan
@@ -341,6 +346,8 @@ function updateStreamState(id, state) {
     // LIVE private tidak boleh mewarisi URL signed lama dari sesi publik.
     (state.private_live === true || state.private_live === 1) ? null : (state.playback_url ?? s.playback_url),
     (state.private_live === true || state.private_live === 1) ? null : (state.playback_flv_url ?? s.playback_flv_url),
+    (state.private_live === true || state.private_live === 1) ? null
+      : (state.playback_candidates !== undefined ? state.playback_candidates : s.playback_candidates),
     id
   );
   return getStream(id);

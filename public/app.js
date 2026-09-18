@@ -657,6 +657,31 @@ function stopAllPlayers() {
     render();
 }
 
+/**
+ * Rantai kandidat playback untuk failover: setiap entri {flv, hls, label}.
+ * Sumber: kolom playback_candidates (semua kualitas dari room) + URL utama
+ * sebagai cadangan terakhir. Player mencoba berurutan saat satu URL mati.
+ */
+function buildCandidates(item) {
+    const list = [];
+    const seen = new Set();
+    const push = (flv, hls, label) => {
+        if (!flv && !hls) return;
+        const k = flv || hls;
+        if (seen.has(k)) return;
+        seen.add(k);
+        list.push({ flv, hls, label });
+    };
+    if (item.playback_candidates) {
+        const arr = typeof item.playback_candidates === 'string'
+            ? (() => { try { return JSON.parse(item.playback_candidates); } catch (_) { return null; } })()
+            : item.playback_candidates;
+        if (Array.isArray(arr)) arr.forEach(c => push(c.flv, c.hls, c.label));
+    }
+    push(item.playback_flv_url, item.playback_url, 'utama');
+    return list;
+}
+
 function openPlayer(key) {
     const item = findItemByKey(key);
     if (!item) return;
@@ -674,16 +699,18 @@ function openPlayer(key) {
     }
 
     if (item.platform === 'tiktok') {
-        // Prioritas sinyal: HLS (hls.js) → FLV (mpegts.js) → milik stream tersimpan → resolve admin
-        let hlsUrl = item.playback_url;
-        let flvUrl = item.playback_flv_url;
-        if (!hlsUrl && !flvUrl) {
+        let kandidat = buildCandidates(item);
+        if (!kandidat.length) {
             const monitored = state.streams.find(s =>
                 s.platform === 'tiktok' && s.source_key === item.source_key && (s.playback_url || s.playback_flv_url));
-            if (monitored) { hlsUrl = monitored.playback_url; flvUrl = monitored.playback_flv_url; }
+            if (monitored) kandidat = buildCandidates(monitored);
         }
-        if (hlsUrl || flvUrl) {
-            state.players.set(key, { key, platform: 'tiktok', hlsUrl, flvUrl, url: item.url });
+        if (kandidat.length) {
+            state.players.set(key, {
+                key, platform: 'tiktok', url: item.url,
+                streamId: typeof item.id === 'number' ? item.id : null,
+                candidates: kandidat, candIdx: 0, refreshedOnce: false
+            });
             attachPlayer(state.players.get(key));
         } else if (isAdmin()) {
             resolveAndPlay(key, item);
@@ -714,9 +741,11 @@ async function resolveAndPlay(key, item) {
             state.players.set(key, {
                 key,
                 platform: 'tiktok',
-                hlsUrl: info.playback_url,
-                flvUrl: info.playback_flv_url,
-                url: item.url
+                url: item.url,
+                streamId: typeof item.id === 'number' ? item.id : null,
+                candidates: buildCandidates(info),
+                candIdx: 0,
+                refreshedOnce: false
             });
             attachPlayer(state.players.get(key));
         }
@@ -725,6 +754,50 @@ async function resolveAndPlay(key, item) {
             container.innerHTML = placeholderHtml(item, key);
         }
         showToast('❌', 'Tidak bisa memutar: ' + err.message, true);
+    }
+}
+
+/** Pindah ke kandidat berikutnya; bila habis → segarkan URL sekali lalu ulangi. */
+async function failoverNext(p) {
+    p.candIdx++;
+    if (p.candidates && p.candIdx < p.candidates.length) {
+        attachPlayer(p);
+        return;
+    }
+    // Semua kandidat mati → ambil daftar URL baru dari server satu kali
+    // (room mungkin restart / URL berganti) lalu coba lagi dari awal.
+    if (!p.refreshedOnce) {
+        p.refreshedOnce = true;
+        try {
+            if (isAdmin() && p.streamId) {
+                await api(`/api/streams/${p.streamId}/refresh`, { method: 'POST' });
+            }
+            await loadStreams();
+            const item = findItemByKey(p.key);
+            const fresh = item ? buildCandidates(item) : [];
+            if (fresh.length) {
+                p.candidates = fresh;
+                p.candIdx = 0;
+                attachPlayer(p);
+                return;
+            }
+        } catch (_) { /* biarkan jatuh ke fallback */ }
+    }
+    // Benar-benar habis
+    const container = document.getElementById('vc-' + p.key);
+    if (container) {
+        destroyPlayerMedia(p.key);
+        const div = document.createElement('div');
+        div.className = 'player-fallback';
+        div.innerHTML = `
+            <div style="font-size:26px">📺</div>
+            <div>Semua sumber stream gagal (${(p.candidates || []).length} kandidat dicoba).</div>
+            <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer"
+               style="color:#00f2ea;font-size:13px;">Buka stream aslinya →</a>`;
+        const closeBtn = container.querySelector('.player-close');
+        container.innerHTML = '';
+        if (closeBtn) container.appendChild(closeBtn);
+        container.insertBefore(div, closeBtn);
     }
 }
 
@@ -777,36 +850,39 @@ function attachPlayer(p) {
         container.insertBefore(div, closeBtn);
     };
 
+    // Kandidat aktif (failover): kompatibel juga dengan player lama yang
+    // hanya menyimpan hlsUrl/flvUrl tunggal.
+    const cand = (p.candidates && p.candidates[p.candIdx]) || { flv: p.flvUrl, hls: p.hlsUrl, label: 'utama' };
+
     // ---- Jalur 1: FLV via mpegts.js (UTAMA — URL m3u8 TikTok sering 404;
     //      FLV lebih segar dan CORS CDN-nya terbuka) ----
-    if (p.flvUrl && window.mpegts && window.mpegts.getFeatureList().mseLivePlayback) {
+    if (cand.flv && window.mpegts && window.mpegts.getFeatureList().mseLivePlayback) {
         const player = window.mpegts.createPlayer(
-            { type: 'flv', url: p.flvUrl, isLive: true, cors: true },
+            { type: 'flv', url: cand.flv, isLive: true, cors: true },
             { enableStashBuffer: false, stashInitialSize: 128, liveBufferLatencyChasing: true }
         );
         flvMap.set(p.key, player);
         player.attachMediaElement(video);
         player.on(window.mpegts.Events.VIDEO_READY, tryPlay);
-        player.on(window.mpegts.Events.ERROR, (type, detail) => {
-            showFallback(`Stream FLV terputus (${type}: ${detail || 'tidak diketahui'}).`);
-        });
+        player.on(window.mpegts.Events.ERROR, () => failoverNext(p));
         try { player.load(); } catch (e) {
-            showFallback('Gagal memuat stream FLV.');
+            failoverNext(p);
+            return;
         }
         tryPlay();
         return;
     }
 
-    // ---- Jalur 2: HLS via hls.js (fallback: room tanpa FLV) ----
-    if (p.hlsUrl && window.Hls && window.Hls.isSupported()) {
+    // ---- Jalur 2: HLS via hls.js (kandidat tanpa FLV / fallback) ----
+    if (cand.hls && window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls({ liveDurationInfinity: true, enableWorker: true });
         hlsMap.set(p.key, hls);
 
         let recoverCount = 0;
-        const MAX_RECOVER = 5;
+        const MAX_RECOVER = 3;
         const recover = (data) => {
             if (recoverCount >= MAX_RECOVER) {
-                showFallback('Stream TikTok terputus / akses dibatasi (kemungkinan CORS atau rate-limit).');
+                failoverNext(p); // pulihkan beberapa kali tetap mati → ganti kandidat
                 return;
             }
             recoverCount++;
@@ -815,12 +891,12 @@ function attachPlayer(p) {
             } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
                 hls.recoverMediaError();
             } else {
-                showFallback('Stream TikTok terputus / akses dibatasi (kemungkinan CORS atau rate-limit).');
+                failoverNext(p);
             }
         };
         hls.on(window.Hls.Events.FRAG_BUFFERED, () => { recoverCount = 0; });
 
-        hls.loadSource(p.hlsUrl);
+        hls.loadSource(cand.hls);
         hls.attachMedia(video);
         hls.on(window.Hls.Events.MANIFEST_PARSED, tryPlay);
         hls.on(window.Hls.Events.ERROR, (_, data) => {
@@ -831,17 +907,16 @@ function attachPlayer(p) {
     }
 
     // ---- Jalur 3: HLS native (engine tanpa MSE, mis. iOS Safari lama) ----
-    if (p.hlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = p.hlsUrl;
+    if (cand.hls && video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = cand.hls;
         video.addEventListener('loadedmetadata', tryPlay, { once: true });
-        video.addEventListener('error', () => showFallback('Gagal memuat stream TikTok (URL kedaluwarsa atau dibatasi).'), { once: true });
+        video.addEventListener('error', () => failoverNext(p), { once: true });
         tryPlay();
         return;
     }
 
-    showFallback(p.hlsUrl
-        ? 'Browser tidak mendukung pemutaran live HLS.'
-        : 'TikTok tidak menyediakan sinyal FLV/HLS untuk stream ini — coba buka aslinya.');
+    // Kandidat ini tak bisa diputar di engine → lanjut kandidat berikutnya
+    failoverNext(p);
 }
 
 /* ------------------------------------------------------------------ */

@@ -546,6 +546,7 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
       started_at: info.started_at,
       playback_url: info.playback_url,
       playback_flv_url: info.playback_flv_url,
+      playback_candidates: info.playback_candidates ? JSON.stringify(info.playback_candidates) : undefined,
       error: null
     });
     if (dariClient) {
@@ -577,6 +578,7 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
     started_at: info.started_at,
     playback_url: info.playback_url,
     playback_flv_url: info.playback_flv_url,
+    playback_candidates: info.playback_candidates ? JSON.stringify(info.playback_candidates) : undefined,
     error: null
   });
   db.insertSnapshot(stream.id, info.is_live, info.viewers);

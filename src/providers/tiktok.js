@@ -112,8 +112,24 @@ function extractApiPlayback(liveRoom) {
     liveRoom?.hevcStreamData?.pull_data?.stream_data,
     liveRoom?.hevc_stream_data?.pull_data?.stream_data
   ];
+  const valid = (u) => (typeof u === 'string' && /^https?:\/\//.test(u) ? u : undefined);
+
+  // Daftar kandidat failover: {flv, hls, label} per kualitas — player
+  // mencoba berurutan bila satu URL mati (404/kedaluwarsa/CDN down).
+  const candidates = [];
+  const seen = new Set();
   let hls;
   let flv;
+
+  const addCandidate = (main, label) => {
+    const cFlv = valid(main.flv);
+    const cHls = valid(main.hls);
+    if (!cFlv && !cHls) return;
+    const key = cFlv || cHls;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ flv: cFlv, hls: cHls, label });
+  };
 
   // Tahap 1: kualitas bervideo. Tahap 2 (upaya terakhir): audio-only 'ao' —
   // lebih baik bersuara daripada tidak bisa diputar sama sekali.
@@ -127,14 +143,19 @@ function extractApiPlayback(liveRoom) {
         const main = qualities?.[quality]?.main;
         if (!main) continue;
         if (!allowAudioOnly && isAudioOnly(quality, main, qualityMeta(main))) continue;
-        if (!hls && typeof main.hls === 'string' && /^https?:\/\//.test(main.hls)) hls = main.hls;
-        if (!flv && typeof main.flv === 'string' && /^https?:\/\//.test(main.flv)) flv = main.flv;
-        if (hls && flv) return { playback_url: hls, playback_flv_url: flv };
+
+        const meta = qualityMeta(main);
+        const label = quality + (meta.codec === 'h265' ? '·H265' : '') + (meta.resolution ? ` ${meta.resolution}` : '');
+        addCandidate(main, label);
+
+        if (!flv && valid(main.flv)) flv = valid(main.flv);
+        if (!hls && valid(main.hls)) hls = valid(main.hls);
       }
     }
     if (hls || flv) break;
   }
-  return { playback_url: hls, playback_flv_url: flv };
+
+  return { playback_url: hls, playback_flv_url: flv, playback_candidates: candidates };
 }
 
 /**

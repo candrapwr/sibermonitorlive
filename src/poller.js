@@ -62,6 +62,7 @@ async function refreshStream(id, opts = {}) {
       started_at: info.started_at,
       playback_url: info.playback_url,
       playback_flv_url: info.playback_flv_url,
+      playback_candidates: info.playback_candidates ? JSON.stringify(info.playback_candidates) : undefined,
       error: null
     });
     db.insertSnapshot(id, info.is_live, info.viewers);
