@@ -34,6 +34,9 @@ const PLAYBACK_QUALITY_ORDER = ['origin', 'hd', 'sd', 'ld', 'ao'];
 
 /** Cari URL gambar pertama di dalam objek sembarang. */
 function extractUrl(obj) {
+  // Endpoint /api-live/user/room/ membalas avatar/cover sebagai STRING polos
+  // (bukan objek url_list seperti payload webcast) — terima keduanya.
+  if (typeof obj === 'string') return obj.startsWith('http') ? obj : undefined;
   if (!obj || typeof obj !== 'object') return undefined;
   for (const key of ['urls', 'url_list', 'urlList']) {
     if (Array.isArray(obj[key])) {
@@ -56,7 +59,7 @@ function extractBestImage(container, hints) {
 }
 
 const AVATAR_HINTS = ['avatar_large', 'avatarLarge', 'avatar_medium', 'avatarMedium', 'avatar_thumb', 'avatarThumb'];
-const COVER_HINTS = ['cover', 'coverUrl', 'blurred_cover'];
+const COVER_HINTS = ['coverUrl', 'cover', 'squareCoverImg', 'blurred_cover'];
 
 /** Ambil URL FLV pertama dari map flv_pull_url (fallback bila room tanpa HLS). */
 function extractFlvUrl(room) {

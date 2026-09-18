@@ -631,8 +631,9 @@ async function downloadStreamImages(stream) {
       const tmp = imgStorePath(stream.id, type) + '.tmp';
       fs.writeFileSync(tmp, buf);
       fs.renameSync(tmp, imgStorePath(stream.id, type)); // atomik: tidak pernah setengah jadi
-    } catch (_) { /* best-effort — fallback SVG tetap ada */ }
+    } catch (e) { console.error('[img] unduh gagal #%s %s dari %s:', stream.id, type, raw.slice(0, 80), e.message); }
   }
+  console.log('[img] selesai unduh #%s (cover:%s avatar:%s)', stream.id, stream.cover_url ? 1 : 0, stream.avatar_url ? 1 : 0);
 }
 
 /** Seed sekali saat start untuk stream yang belum punya gambar tersimpan. */
