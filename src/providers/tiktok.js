@@ -266,13 +266,41 @@ function parseUrl(url) {
 /* Info live per username                                              */
 /* ------------------------------------------------------------------ */
 
-async function getStreamInfo(username) {
+async function getStreamInfo(username, opts = {}) {
   // Status polling sengaja tidak melalui withContext/Chromium. Selain lebih
   // ringan, endpoint ini bisa membedakan live private: user.status tetap 2
   // walaupun liveRoom tidak menyediakan URL playback.
   const normalizedUsername = String(username).replace(/^@/, '').toLowerCase();
+
+  // Jalur browser (refresh manual 🔄): sidik jari Chromium asli dipercaya
+  // TikTok — data paling lengkap, tidak bergantung umur cookie sesi.
+  if (opts.via === 'browser') {
+    try {
+      return await getStreamInfoViaBrowser(normalizedUsername);
+    } catch (e) {
+      // Chromium bermasalah → jangan gagalkan refresh, fallback jalur API
+      console.error('[tiktok] cek via browser gagal, fallback ke API:', e.message);
+    }
+  }
+
   const payload = await fetchLiveApi(normalizedUsername);
   return normalizeLiveApi(payload, normalizedUsername);
+}
+
+/** Buka URL live API langsung di Chromium persisten lalu normalisasi. */
+async function getStreamInfoViaBrowser(username) {
+  const url = `https://www.tiktok.com/api-live/user/room/?aid=${LIVE_API_AID}`
+    + `&uniqueId=${encodeURIComponent(username)}&sourceType=${LIVE_API_SOURCE_TYPE}`;
+  return withContext(async (ctx) => {
+    const page = await ctx.newPage();
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
+      const body = await page.evaluate(() => document.body.innerText);
+      return normalizeLiveApi(JSON.parse(body), username);
+    } finally {
+      await page.close().catch(() => {});
+    }
+  });
 }
 
 /* ------------------------------------------------------------------ */

@@ -20,9 +20,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // URL lama dipertahankan) — satu cek gagal parse tidak bisa mematikan stream.
 const offlineStreak = new Map(); // stream id → jumlah cek offline berturut-turut
 
-/** Cek satu stream via provider yang sesuai → info terbaru. */
-async function fetchStreamInfo(stream) {
-  if (stream.platform === 'tiktok') return tiktok.getStreamInfo(stream.source_key);
+/** Cek satu stream via provider yang sesuai → info terbaru.
+ *  opts.via = 'browser' → TikTok dicek lewat Chromium (dipakai 🔄 manual). */
+async function fetchStreamInfo(stream, opts = {}) {
+  if (stream.platform === 'tiktok') return tiktok.getStreamInfo(stream.source_key, opts);
   if (stream.platform === 'youtube') return youtube.getStreamInfo(stream.source_key);
   throw new Error(`Platform tidak dikenal: ${stream.platform}`);
 }
@@ -31,11 +32,11 @@ async function fetchStreamInfo(stream) {
  * Refresh satu stream (dipakai poller & endpoint POST /refresh).
  * Mengembalikan state stream terbaru dari DB.
  */
-async function refreshStream(id) {
+async function refreshStream(id, opts = {}) {
   const stream = db.getStream(id);
   if (!stream) return null;
   try {
-    const info = await fetchStreamInfo(stream);
+    const info = await fetchStreamInfo(stream, opts);
 
     // Transisi live → offline butuh konfirmasi (lihat offlineStreak)
     if (!info.is_live && stream.is_live) {
