@@ -405,12 +405,18 @@ async function assignCategory(streamId, categoryId) {
 /* Render kartu                                                        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * URL gambar aman untuk <img>: CDN TikTok/YouTube menolak akses langsung
+ * dari browser ("Access Denied") → dialirkan lewat proxy server sendiri.
+ */
+const imgProxy = (u) => (u ? '/api/img?u=' + encodeURIComponent(u) : u);
+
 function placeholderHtml(item, key) {
     const pmeta = PLATFORM_META[item.platform] || { icon: '❓', name: item.platform };
     const live = !!item.is_live;
     const duration = live ? formatDuration(item.started_at) : '';
     const cover = item.cover_url
-        ? `<img class="cover-img" src="${esc(item.cover_url)}" alt="" loading="lazy" onerror="this.remove()">`
+        ? `<img class="cover-img" src="${esc(imgProxy(item.cover_url))}" alt="" loading="lazy" onerror="this.remove()">`
         : '';
     return `
         <div class="video-placeholder">
@@ -457,7 +463,7 @@ function cardHtml(item, monitored) {
     ].filter(Boolean).join('');
 
     const avatar = item.avatar_url
-        ? `<div class="avatar"><img src="${esc(item.avatar_url)}" alt="" onerror="this.remove()"></div>`
+        ? `<div class="avatar"><img src="${esc(imgProxy(item.avatar_url))}" alt="" loading="lazy" onerror="this.remove()"></div>`
         : `<div class="avatar">${initial}</div>`;
 
     return `

@@ -148,6 +148,59 @@ function adminOnly(req, res, next) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Proxy gambar (cover/avatar)                                         */
+/*                                                                     */
+/* CDN TikTok/YouTube menolak request <img> langsung dari origin lain  */
+/* ("Access Denied" — cek referer/tanda tangan). Server mengambil      */
+/* gambarnya dengan header yang benar lalu menyajikannya dari origin   */
+/* sendiri. Host dibatasi allowlist supaya tidak jadi open-proxy.      */
+/* ------------------------------------------------------------------ */
+
+const IMG_HOST_ALLOW = [
+  /\.tiktokcdn(-us)?\.com$/i,
+  /\.tiktok\.com$/i,
+  /\.ytimg\.com$/i,
+  /\.youtube\.com$/i,
+  /\.ggpht\.com$/i,
+  /\.googleusercontent\.com$/i
+];
+const IMG_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+app.get('/api/img', async (req, res) => {
+  const raw = String(req.query.u || '');
+  let target;
+  try {
+    target = new URL(raw);
+  } catch {
+    return res.status(400).json({ error: 'URL gambar tidak valid' });
+  }
+  if (target.protocol !== 'https:' || !IMG_HOST_ALLOW.some(re => re.test(target.hostname))) {
+    return res.status(403).json({ error: 'Host gambar tidak diizinkan' });
+  }
+  try {
+    const r = await fetch(target, {
+      headers: {
+        'User-Agent': IMG_UA,
+        'Accept': 'image/*',
+        // Referer platform asli — sebagian CDN menolak tanpa ini
+        'Referer': target.hostname.includes('tiktok') ? 'https://www.tiktok.com/' : 'https://www.youtube.com/'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !ct.startsWith('image/')) {
+      return res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.set('Content-Type', ct);
+    res.set('Cache-Control', 'public, max-age=86400'); // cache browser 1 hari
+    res.send(buf);
+  } catch {
+    res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /* Helper                                                              */
 /* ------------------------------------------------------------------ */
 
