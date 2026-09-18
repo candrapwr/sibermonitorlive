@@ -406,12 +406,19 @@ async function assignCategory(streamId, categoryId) {
 /* ------------------------------------------------------------------ */
 
 /**
+ * Huruf fallback aman-URI: alphanumerik pertama dari teks. Emoji/surrogate
+ * yang terpotong tidak bisa dilewati encodeURIComponent (URIError: URI
+ * malformed) — nama TikTok sering berawalan emoji, jadi saring dulu.
+ */
+const safeChar = (s) => (String(s || '').match(/[A-Za-z0-9]/) || ['?'])[0];
+
+/**
  * URL gambar aman untuk <img>: CDN TikTok/YouTube menolak akses langsung
  * dari browser ("Access Denied") → dialirkan lewat proxy server sendiri.
  * `hint` = teks fallback (avatar huruf) bila URL CDN kedaluwarsa.
  */
 const imgProxy = (u, hint) => (u
-    ? '/api/img?u=' + encodeURIComponent(u) + (hint ? '&t=' + encodeURIComponent(hint) : '')
+    ? '/api/img?u=' + encodeURIComponent(u) + (hint ? '&t=' + safeChar(hint) : '')
     : u);
 
 /**
@@ -422,7 +429,7 @@ const imgProxy = (u, hint) => (u
  * - hasil pencarian (belum tersimpan): proxy CDN sesuai snapshot
  */
 const imgSrc = (item, type, hint, monitored) => (monitored && item.id
-    ? `/img/${item.id}/${type}?v=${item.img_v || 0}&t=${encodeURIComponent((hint || '').slice(0, 1))}`
+    ? `/img/${item.id}/${type}?v=${item.img_v || 0}&t=${safeChar(hint)}`
     : imgProxy(item[type === 'cover' ? 'cover_url' : 'avatar_url'], hint));
 
 function placeholderHtml(item, key) {
