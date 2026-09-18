@@ -163,6 +163,7 @@ function normalizeLiveApi(payload, fallbackUsername) {
     ?? liveRoom?.live_room_stats?.user_count
     ?? liveRoom?.userCount
     ?? 0;
+  const avatarUrl = extractBestImage(user, AVATAR_HINTS);
 
   return {
     platform: 'tiktok',
@@ -174,8 +175,11 @@ function normalizeLiveApi(payload, fallbackUsername) {
     viewers: isLive ? (parseCount(viewers) || 0) : 0,
     display_name: user.nickname || handle,
     handle: '@' + handle,
-    avatar_url: extractBestImage(user, AVATAR_HINTS),
-    cover_url: extractBestImage(liveRoom, COVER_HINTS),
+    avatar_url: avatarUrl,
+    // Room OFFLINE mengirim coverUrl/squareCoverImg sebagai string KOSONG —
+    // satu-satunya gambar yang tersedia adalah avatar profil; pakai itu
+    // sebagai cover supaya kartu tetap bergambar (bukan kotak gelap).
+    cover_url: extractBestImage(liveRoom, COVER_HINTS) || avatarUrl,
     started_at: toStartedAt(liveRoom?.startTime ?? liveRoom?.start_time),
     ...playback,
     // true berarti akun sedang live tetapi TikTok tidak memberikan URL
