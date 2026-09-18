@@ -777,7 +777,27 @@ function attachPlayer(p) {
         container.insertBefore(div, closeBtn);
     };
 
-    // ---- Jalur 1: HLS via hls.js (utama; konsisten di semua engine) ----
+    // ---- Jalur 1: FLV via mpegts.js (UTAMA — URL m3u8 TikTok sering 404;
+    //      FLV lebih segar dan CORS CDN-nya terbuka) ----
+    if (p.flvUrl && window.mpegts && window.mpegts.getFeatureList().mseLivePlayback) {
+        const player = window.mpegts.createPlayer(
+            { type: 'flv', url: p.flvUrl, isLive: true, cors: true },
+            { enableStashBuffer: false, stashInitialSize: 128, liveBufferLatencyChasing: true }
+        );
+        flvMap.set(p.key, player);
+        player.attachMediaElement(video);
+        player.on(window.mpegts.Events.VIDEO_READY, tryPlay);
+        player.on(window.mpegts.Events.ERROR, (type, detail) => {
+            showFallback(`Stream FLV terputus (${type}: ${detail || 'tidak diketahui'}).`);
+        });
+        try { player.load(); } catch (e) {
+            showFallback('Gagal memuat stream FLV.');
+        }
+        tryPlay();
+        return;
+    }
+
+    // ---- Jalur 2: HLS via hls.js (fallback: room tanpa FLV) ----
     if (p.hlsUrl && window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls({ liveDurationInfinity: true, enableWorker: true });
         hlsMap.set(p.key, hls);
@@ -810,7 +830,7 @@ function attachPlayer(p) {
         return;
     }
 
-    // ---- Jalur 2: HLS native (engine tanpa MSE, mis. iOS Safari lama) ----
+    // ---- Jalur 3: HLS native (engine tanpa MSE, mis. iOS Safari lama) ----
     if (p.hlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = p.hlsUrl;
         video.addEventListener('loadedmetadata', tryPlay, { once: true });
@@ -819,29 +839,9 @@ function attachPlayer(p) {
         return;
     }
 
-    // ---- Jalur 3: FLV via mpegts.js — sebagian room TikTok (mis. multi-host)
-    //      hanya menyediakan FLV tanpa HLS; CDN-nya CORS-nya terbuka ----
-    if (p.flvUrl && window.mpegts && window.mpegts.getFeatureList().mseLivePlayback) {
-        const player = window.mpegts.createPlayer(
-            { type: 'flv', url: p.flvUrl, isLive: true, cors: true },
-            { enableStashBuffer: false, stashInitialSize: 128, liveBufferLatencyChasing: true }
-        );
-        flvMap.set(p.key, player);
-        player.attachMediaElement(video);
-        player.on(window.mpegts.Events.VIDEO_READY, tryPlay);
-        player.on(window.mpegts.Events.ERROR, (type, detail) => {
-            showFallback(`Stream FLV terputus (${type}: ${detail || 'tidak diketahui'}).`);
-        });
-        try { player.load(); } catch (e) {
-            showFallback('Gagal memuat stream FLV.');
-        }
-        tryPlay();
-        return;
-    }
-
-    showFallback(p.flvUrl
-        ? 'Browser tidak mendukung pemutaran live FLV.'
-        : 'TikTok tidak menyediakan sinyal HLS/FLV untuk stream ini — coba buka aslinya.');
+    showFallback(p.hlsUrl
+        ? 'Browser tidak mendukung pemutaran live HLS.'
+        : 'TikTok tidak menyediakan sinyal FLV/HLS untuk stream ini — coba buka aslinya.');
 }
 
 /* ------------------------------------------------------------------ */

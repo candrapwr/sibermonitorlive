@@ -26,7 +26,7 @@ const WAIT_ROOM_MS = 15000;
 const LIVE_API_TIMEOUT = 15000;
 const LIVE_API_AID = 1988;
 const LIVE_API_SOURCE_TYPE = 54;
-const PLAYBACK_QUALITY_ORDER = ['origin', 'hd', 'sd', 'ld', 'ao'];
+const PLAYBACK_QUALITY_ORDER = ['origin', 'hd', 'sd', 'ld']; // 'ao' audio-only → upaya terakhir
 
 /* ------------------------------------------------------------------ */
 /* Helper ekstraksi                                                    */
@@ -85,26 +85,54 @@ function parseMaybeJson(value) {
 }
 
 /** Ambil URL playback terbaik dari format stream_data API ringan TikTok. */
+/** Bongkar sdk_params sebuah kualitas (string JSON, kadang double-escaped)
+ *  → metadata codec/resolusi. Konsep enumerasi kualitas dari tiktok-live-check.js. */
+function qualityMeta(main) {
+  const sp = parseMaybeJson(parseMaybeJson(main?.sdk_params)) || {};
+  return {
+    codec: sp.VCodec,           // 'h264' / 'h265'
+    resolution: sp.resolution,  // mis. '720x1280'
+    suffix: sp.stream_suffix    // mis. 'hd', 'hd5', 'ao'
+  };
+}
+
+/** Kualitas audio-saja (suara tanpa gambar) — bukan pilihan playback yang baik. */
+function isAudioOnly(qualityKey, main, meta) {
+  if (qualityKey === 'ao' || meta.suffix === 'ao') return true;
+  if (/only_audio=1/.test(String(main.flv || '') + String(main.hls || ''))) return true;
+  return false;
+}
+
 function extractApiPlayback(liveRoom) {
+  // Prioritas H264 (streamData) — H265 (hevcStreamData) sering tidak bisa
+  // diputar browser, hanya dipakai bila H264 tidak tersedia sama sekali.
   const sources = [
     liveRoom?.streamData?.pull_data?.stream_data,
-    liveRoom?.hevcStreamData?.pull_data?.stream_data,
     liveRoom?.stream_data?.pull_data?.stream_data,
+    liveRoom?.hevcStreamData?.pull_data?.stream_data,
     liveRoom?.hevc_stream_data?.pull_data?.stream_data
   ];
   let hls;
   let flv;
 
-  for (const raw of sources) {
-    const parsed = parseMaybeJson(raw);
-    const qualities = parsed?.data || {};
-    for (const quality of PLAYBACK_QUALITY_ORDER) {
-      const main = qualities?.[quality]?.main;
-      if (!main) continue;
-      if (!hls && typeof main.hls === 'string' && /^https?:\/\//.test(main.hls)) hls = main.hls;
-      if (!flv && typeof main.flv === 'string' && /^https?:\/\//.test(main.flv)) flv = main.flv;
-      if (hls && flv) return { playback_url: hls, playback_flv_url: flv };
+  // Tahap 1: kualitas bervideo. Tahap 2 (upaya terakhir): audio-only 'ao' —
+  // lebih baik bersuara daripada tidak bisa diputar sama sekali.
+  const passes = [PLAYBACK_QUALITY_ORDER, ['ao']];
+  for (let pi = 0; pi < passes.length; pi++) {
+    const allowAudioOnly = pi > 0;
+    for (const raw of sources) {
+      const parsed = parseMaybeJson(raw);
+      const qualities = parsed?.data || {};
+      for (const quality of passes[pi]) {
+        const main = qualities?.[quality]?.main;
+        if (!main) continue;
+        if (!allowAudioOnly && isAudioOnly(quality, main, qualityMeta(main))) continue;
+        if (!hls && typeof main.hls === 'string' && /^https?:\/\//.test(main.hls)) hls = main.hls;
+        if (!flv && typeof main.flv === 'string' && /^https?:\/\//.test(main.flv)) flv = main.flv;
+        if (hls && flv) return { playback_url: hls, playback_flv_url: flv };
+      }
     }
+    if (hls || flv) break;
   }
   return { playback_url: hls, playback_flv_url: flv };
 }
