@@ -132,7 +132,9 @@ function parseCookies(req) {
 
 /** Middleware: wajib login; viewer-only endpoints dicek terpisah. */
 app.use('/api', (req, res, next) => {
-  if (req.path === '/auth/login' || req.path === '/health' || req.path === '/assets-version') return next();
+  // /img dibuka tanpa login: cover/avatar memang aset publik CDN (login overlay
+  // tetap melindungi halaman); anti-abuse ditangani allowlist + rate-limit.
+  if (req.path === '/auth/login' || req.path === '/health' || req.path === '/assets-version' || req.path === '/img') return next();
   const user = db.getSessionUser(parseCookies(req).sid);
   if (!user) return res.status(401).json({ error: 'Belum login' });
   req.user = user;
@@ -228,7 +230,38 @@ async function fetchCdnImage(target) {
   return Buffer.from(await r.arrayBuffer());
 }
 
+/* Rate-limit ringan per IP (in-memory) — pengaman karena /api/img publik. */
+const IMG_RATE_LIMIT = 120;            // max request/menit/IP
+const IMG_RATE_WINDOW_MS = 60 * 1000;
+const imgRate = new Map();             // ip → { count, resetAt }
+
+function imgRateAllow(ip) {
+  const now = Date.now();
+  let e = imgRate.get(ip);
+  if (!e || now > e.resetAt) {
+    e = { count: 0, resetAt: now + IMG_RATE_WINDOW_MS };
+    imgRate.set(ip, e);
+  }
+  if (imgRate.size > 1000) { // bersihkan entri basi sesekali
+    for (const [k, v] of imgRate) if (now > v.resetAt) imgRate.delete(k);
+  }
+  return ++e.count <= IMG_RATE_LIMIT;
+}
+
+/** Fallback visual bila CDN menolak (URL bertanda tangan kedaluwarsa) dan
+    cache pun kosong: avatar huruf / kotak netral — selalu 200, tanpa img pecah. */
+function fallbackImageSvg(letter) {
+  const ch = (String(letter || '').match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase();
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">` +
+    `<rect width="200" height="200" fill="#14141f"/>` +
+    `<text x="100" y="128" font-family="Arial,sans-serif" font-size="86" font-weight="700" ` +
+    `fill="#00f2ea" text-anchor="middle">${ch}</text></svg>`;
+}
+
 app.get('/api/img', async (req, res) => {
+  if (!imgRateAllow(req.ip || 'unknown')) {
+    return res.status(429).set('Retry-After', '10').json({ error: 'Terlalu banyak request gambar' });
+  }
   const raw = String(req.query.u || '');
   let target;
   try {
@@ -259,16 +292,19 @@ app.get('/api/img', async (req, res) => {
   // 2) Ambil dari CDN, simpan ke cache, sajikan
   try {
     const buf = await fetchCdnImage(target);
-    if (!buf) return res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+    if (!buf) throw new Error('CDN menolak');
     fs.writeFile(cacheFile, buf, () => trimImgCache()); // tulis asinkron, best-effort
     res.set('Content-Type', sniffImageType(buf)).set('X-Img-Cache', 'miss').send(buf);
   } catch {
-    // 3) CDN gagal → fallback cache basi (lebih baik daripada kosong)
+    // 3) CDN gagal → fallback cache basi; kalau tidak ada → gambar fallback
     try {
       const buf = fs.readFileSync(cacheFile);
       res.set('Content-Type', sniffImageType(buf)).set('X-Img-Cache', 'stale').send(buf);
     } catch {
-      res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+      res.set('Content-Type', 'image/svg+xml')
+        .set('Cache-Control', 'public, max-age=3600')
+        .set('X-Img-Cache', 'fallback')
+        .send(fallbackImageSvg(req.query.t));
     }
   }
 });
