@@ -109,15 +109,43 @@ function extractApiPlayback(liveRoom) {
   return { playback_url: hls, playback_flv_url: flv };
 }
 
+/**
+ * Header Cookie TikTok (dimuat sekali dari cookies-tiktok.json hasil
+ * `npm run login` / export-cookies). Request BER-cookie mendapat data room
+ * lebih lengkap — terutama cover room offline yang dikosongkan untuk
+ * request anonim (diverifikasi langsung: anonim → coverUrl "", ber-cookie →
+ * terisi). File tidak ada → jalan tanpa cookie (mode anonim).
+ */
+let tiktokCookieHeader = null;
+function loadTiktokCookieHeader() {
+  if (tiktokCookieHeader !== null) return tiktokCookieHeader;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const file = path.join(__dirname, '..', '..', 'cookies-tiktok.json');
+    const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
+    tiktokCookieHeader = (Array.isArray(arr) ? arr : [])
+      .filter(c => c && c.name && c.value)
+      .map(c => `${c.name}=${c.value}`)
+      .join('; ');
+    if (tiktokCookieHeader) console.log(`[tiktok] live API memakai ${arr.length} cookie sesi`);
+  } catch (_) {
+    tiktokCookieHeader = '';
+  }
+  return tiktokCookieHeader;
+}
+
 /** Ambil data status live dari endpoint HTTP tanpa membuka browser. */
 async function fetchLiveApi(username) {
   const url = `https://www.tiktok.com/api-live/user/room/?aid=${LIVE_API_AID}`
     + `&uniqueId=${encodeURIComponent(username)}&sourceType=${LIVE_API_SOURCE_TYPE}`;
+  const cookie = loadTiktokCookieHeader();
   const res = await fetchWithUA(url, {
     timeout: LIVE_API_TIMEOUT,
     headers: {
       Referer: 'https://www.tiktok.com/',
-      Accept: 'application/json, text/plain, */*'
+      Accept: 'application/json, text/plain, */*',
+      ...(cookie ? { Cookie: cookie } : {})
     }
   });
   if (!res.ok) throw new Error(`TikTok live API HTTP ${res.status}`);
