@@ -417,11 +417,12 @@ const imgProxy = (u, hint) => (u
 /**
  * Sumber <img> untuk kartu:
  * - stream tersimpan (monitored): gambar LOKAL di server (/img/:id/:type) —
- *   diperbarui hanya saat simpan / 🔄 refresh manual, tidak pernah otomatis
+ *   diperbarui hanya saat simpan / 🔄 refresh manual, tidak pernah otomatis;
+ *   ?v= berubah hanya saat file gambar berganti → browser langsung ambil yang baru
  * - hasil pencarian (belum tersimpan): proxy CDN sesuai snapshot
  */
 const imgSrc = (item, type, hint, monitored) => (monitored && item.id
-    ? `/img/${item.id}/${type}?t=${encodeURIComponent(hint || '')}`
+    ? `/img/${item.id}/${type}?v=${item.img_v || 0}&t=${encodeURIComponent((hint || '').slice(0, 1))}`
     : imgProxy(item[type === 'cover' ? 'cover_url' : 'avatar_url'], hint));
 
 function placeholderHtml(item, key) {

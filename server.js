@@ -476,8 +476,23 @@ app.delete('/api/categories/:id', adminOnly, (req, res) => {
 /* ------------------------------------------------------------------ */
 
 // Daftar stream — viewer hanya melihat saved buatan admin DALAM kategori yang ditugaskan
+/** Versi gambar tersimpan (mtime) — cache-buster <img>: URL berubah HANYA
+    saat file gambar di toko benar-benar berganti (mis. setelah 🔄 manual). */
+function imgVersion(id) {
+  let v = 0;
+  for (const type of ['cover', 'avatar']) {
+    try {
+      const st = fs.statSync(imgStorePath(id, type));
+      if (st.mtimeMs > v) v = st.mtimeMs;
+    } catch (_) { /* belum ada */ }
+  }
+  return v ? v.toString(36) : undefined;
+}
+
 app.get('/api/streams', (req, res) => {
-  res.json(req.user.role === 'admin' ? db.listStreams() : db.listStreamsForViewer(req.user.id));
+  const streams = req.user.role === 'admin' ? db.listStreams() : db.listStreamsForViewer(req.user.id);
+  for (const s of streams) s.img_v = imgVersion(s.id);
+  res.json(streams);
 });
 
 // Tambah stream dari URL → otomatis masuk Saved (admin).
@@ -667,7 +682,10 @@ app.post('/api/streams/:id/refresh', adminOnly, wrapAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const stream = await poller.refreshStream(id);
   if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
-  downloadStreamImages(stream).catch(() => {}); // 🔄 manual → perbarui gambar juga
+  // AWAIT unduhan gambar: respons baru dikirim setelah file toko diperbarui,
+  // supaya re-render di UI langsung menampilkan cover/avatar baru
+  await downloadStreamImages(stream).catch(() => {});
+  stream.img_v = imgVersion(id);
   res.json(stream);
 }));
 
