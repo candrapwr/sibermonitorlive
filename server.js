@@ -166,6 +166,68 @@ const IMG_HOST_ALLOW = [
 ];
 const IMG_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
+/* Cache disk: user pertama men-fetch dari CDN, sisanya dilayani dari disk.
+   Tanpa ini, cache browser tiap user terpisah → N user = N fetch CDN. */
+const IMG_CACHE_DIR = path.join(__dirname, 'data', 'img-cache');
+const IMG_CACHE_TTL_MS = 24 * 3600 * 1000; // selaras cache browser (1 hari)
+const IMG_CACHE_MAX_BYTES = 200 * 1024 * 1024; // batas 200MB, sisakan ruang disk
+
+function imgCachePath(url) {
+  return path.join(IMG_CACHE_DIR, crypto.createHash('sha1').update(url).digest('hex'));
+}
+
+/** Deteksi content-type dari magic bytes (file cache tanpa ekstensi). */
+function sniffImageType(buf) {
+  if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf.length > 12 && buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP') return 'image/webp';
+  if (buf.length > 6 && buf.subarray(0, 3).toString() === 'GIF') return 'image/gif';
+  if (buf.length > 12 && buf.subarray(4, 8).toString() === 'ftyp') return 'image/avif';
+  return 'application/octet-stream';
+}
+
+/** Buang entri terlama bila cache melebihi batas (dijalankan asinkron, best-effort). */
+function trimImgCache() {
+  fs.readdir(IMG_CACHE_DIR, (err, files) => {
+    if (err) return;
+    const stats = [];
+    let pending = files.length;
+    if (!pending) return;
+    for (const f of files) {
+      const p = path.join(IMG_CACHE_DIR, f);
+      fs.stat(p, (e2, st) => {
+        if (!e2) stats.push({ p, mtime: st.mtimeMs, size: st.size });
+        if (--pending === 0) {
+          const total = stats.reduce((a, s) => a + s.size, 0);
+          if (total <= IMG_CACHE_MAX_BYTES) return;
+          stats.sort((a, b) => a.mtime - b.mtime); // terlama dulu
+          let over = total - IMG_CACHE_MAX_BYTES;
+          for (const s of stats) {
+            if (over <= 0) break;
+            fs.unlink(s.p, () => {});
+            over -= s.size;
+          }
+        }
+      });
+    }
+  });
+}
+
+async function fetchCdnImage(target) {
+  const r = await fetch(target, {
+    headers: {
+      'User-Agent': IMG_UA,
+      'Accept': 'image/*',
+      // Referer platform asli — sebagian CDN menolak tanpa ini
+      'Referer': target.hostname.includes('tiktok') ? 'https://www.tiktok.com/' : 'https://www.youtube.com/'
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+  const ct = r.headers.get('content-type') || '';
+  if (!r.ok || !ct.startsWith('image/')) return null;
+  return Buffer.from(await r.arrayBuffer());
+}
+
 app.get('/api/img', async (req, res) => {
   const raw = String(req.query.u || '');
   let target;
@@ -177,26 +239,37 @@ app.get('/api/img', async (req, res) => {
   if (target.protocol !== 'https:' || !IMG_HOST_ALLOW.some(re => re.test(target.hostname))) {
     return res.status(403).json({ error: 'Host gambar tidak diizinkan' });
   }
+
+  fs.mkdirSync(IMG_CACHE_DIR, { recursive: true });
+  const cacheFile = imgCachePath(raw);
+  res.set('Cache-Control', 'public, max-age=86400'); // cache browser 1 hari
+
+  // 1) Cache disk segar → langsung sajikan (tanpa sentuh CDN)
   try {
-    const r = await fetch(target, {
-      headers: {
-        'User-Agent': IMG_UA,
-        'Accept': 'image/*',
-        // Referer platform asli — sebagian CDN menolak tanpa ini
-        'Referer': target.hostname.includes('tiktok') ? 'https://www.tiktok.com/' : 'https://www.youtube.com/'
-      },
-      signal: AbortSignal.timeout(8000)
-    });
-    const ct = r.headers.get('content-type') || '';
-    if (!r.ok || !ct.startsWith('image/')) {
-      return res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+    const st = fs.statSync(cacheFile);
+    if (Date.now() - st.mtimeMs < IMG_CACHE_TTL_MS) {
+      const buf = fs.readFileSync(cacheFile);
+      const ct = sniffImageType(buf);
+      if (ct !== 'application/octet-stream') {
+        return res.set('Content-Type', ct).set('X-Img-Cache', 'hit').send(buf);
+      }
     }
-    const buf = Buffer.from(await r.arrayBuffer());
-    res.set('Content-Type', ct);
-    res.set('Cache-Control', 'public, max-age=86400'); // cache browser 1 hari
-    res.send(buf);
+  } catch (_) { /* belum ada di cache */ }
+
+  // 2) Ambil dari CDN, simpan ke cache, sajikan
+  try {
+    const buf = await fetchCdnImage(target);
+    if (!buf) return res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+    fs.writeFile(cacheFile, buf, () => trimImgCache()); // tulis asinkron, best-effort
+    res.set('Content-Type', sniffImageType(buf)).set('X-Img-Cache', 'miss').send(buf);
   } catch {
-    res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+    // 3) CDN gagal → fallback cache basi (lebih baik daripada kosong)
+    try {
+      const buf = fs.readFileSync(cacheFile);
+      res.set('Content-Type', sniffImageType(buf)).set('X-Img-Cache', 'stale').send(buf);
+    } catch {
+      res.status(502).json({ error: 'Gambar gagal diambil dari CDN' });
+    }
   }
 });
 
