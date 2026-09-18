@@ -196,6 +196,13 @@ Semua endpoint (kecuali `login` & `health`) butuh cookie session. **[A]** = khus
 | `/api/resolve` | POST | [A] | Resolve URL → info live |
 | `/api/search?platform=&q=&page=` | GET | [A] | Pencarian live |
 | `/api/stats` · `/api/health` | GET | login/publik | Statistik & health |
+| `/api/assets-version` | GET | publik | Versi CSS/JS (auto-update frontend) |
+| `/api/img?u=&t=` | GET | publik¹ | Proxy gambar hasil pencarian (cache disk) |
+| `/img/:id/:type` | GET | publik¹ | Gambar tersimpan per stream (`cover`/`avatar`) |
+
+¹ publik tapi dibatasi allowlist host CDN + rate-limit 120 req/menit/IP; halaman aplikasi tetap wajib login.
+
+**Toko gambar per stream** — cover/avatar stream tersimpan lokal di `data/img-store/<id>-<tipe>` dan hanya diperbarui saat stream disimpan atau admin menekan 🔄 refresh manual. Poller otomatis (tiap 60 dtk) **tidak pernah mengunduh gambar**, jadi trafik CDN gambar minim dan kartu selalu render dari disk lokal (fallback: avatar huruf SVG bila file belum ada).
 
 ---
 

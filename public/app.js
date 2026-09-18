@@ -414,12 +414,24 @@ const imgProxy = (u, hint) => (u
     ? '/api/img?u=' + encodeURIComponent(u) + (hint ? '&t=' + encodeURIComponent(hint) : '')
     : u);
 
+/**
+ * Sumber <img> untuk kartu:
+ * - stream tersimpan (monitored): gambar LOKAL di server (/img/:id/:type) —
+ *   diperbarui hanya saat simpan / 🔄 refresh manual, tidak pernah otomatis
+ * - hasil pencarian (belum tersimpan): proxy CDN sesuai snapshot
+ */
+const imgSrc = (item, type, hint, monitored) => (monitored && item.id
+    ? `/img/${item.id}/${type}?t=${encodeURIComponent(hint || '')}`
+    : imgProxy(item[type === 'cover' ? 'cover_url' : 'avatar_url'], hint));
+
 function placeholderHtml(item, key) {
     const pmeta = PLATFORM_META[item.platform] || { icon: '❓', name: item.platform };
     const live = !!item.is_live;
     const duration = live ? formatDuration(item.started_at) : '';
-    const cover = item.cover_url
-        ? `<img class="cover-img" src="${esc(imgProxy(item.cover_url))}" alt="" loading="lazy" onerror="this.remove()">`
+    const monitored = String(key).startsWith('s-');
+    const name = item.display_name || item.handle || item.source_key || '';
+    const cover = item.cover_url || monitored
+        ? `<img class="cover-img" src="${esc(imgSrc(item, 'cover', name, monitored))}" alt="" loading="lazy" onerror="this.remove()">`
         : '';
     return `
         <div class="video-placeholder">
@@ -465,8 +477,8 @@ function cardHtml(item, monitored) {
         monitored && item.last_error ? `<span class="tag error-tag" title="${esc(item.last_error)}">⚠ cek gagal</span>` : ''
     ].filter(Boolean).join('');
 
-    const avatar = item.avatar_url
-        ? `<div class="avatar"><img src="${esc(imgProxy(item.avatar_url, name))}" alt="" loading="lazy"
+    const avatar = item.avatar_url || monitored
+        ? `<div class="avatar"><img src="${esc(imgSrc(item, 'avatar', name, monitored))}" alt="" loading="lazy"
               onerror="this.outerHTML='${initial}'"></div>`
         : `<div class="avatar">${initial}</div>`;
 

@@ -536,6 +536,8 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
     if (dariClient) {
       setImmediate(() => poller.refreshStream(existing.id).catch(() => {}));
     }
+    // simpan (baru/duplikat) → unduh gambar ke toko sekali
+    downloadStreamImages(refreshed || updated).catch(() => {});
     return res.json({ stream: refreshed || updated, duplicated: true });
   }
 
@@ -567,6 +569,8 @@ app.post('/api/streams', adminOnly, wrapAsync(async (req, res) => {
   if (dariClient) {
     setImmediate(() => poller.refreshStream(stream.id).catch(() => {}));
   }
+  // simpan baru → unduh gambar ke toko sekali
+  downloadStreamImages(stream).catch(() => {});
   res.status(201).json({ stream });
 }));
 
@@ -596,11 +600,73 @@ app.delete('/api/streams/:id', adminOnly, (req, res) => {
   res.json({ ok: true });
 });
 
+/* ------------------------------------------------------------------ */
+/* Toko gambar per stream                                              */
+/*                                                                     */
+/* Cover/avatar stream tersimpan permanen di data/img-store/<id>-<tipe> */
+/* dan HANYA diperbarui saat: (1) stream disimpan pertama kali,         */
+/* (2) admin menekan 🔄 refresh manual. Poller otomatis TIDAK pernah    */
+/* mengunduh gambar — app selalu load dari file lokal.                 */
+/* Endpoint /img/:id/:type publik (halaman tetap dilindungi login).     */
+/* ------------------------------------------------------------------ */
+
+const IMG_STORE_DIR = path.join(__dirname, 'data', 'img-store');
+
+function imgStorePath(id, type) {
+  return path.join(IMG_STORE_DIR, `${id}-${type}`);
+}
+
+/** Unduh cover+avatar stream ke toko (best-effort, tulis atomik). */
+async function downloadStreamImages(stream) {
+  if (!stream || !stream.id) return;
+  fs.mkdirSync(IMG_STORE_DIR, { recursive: true });
+  for (const type of ['cover', 'avatar']) {
+    const raw = stream[type === 'cover' ? 'cover_url' : 'avatar_url'];
+    if (!raw) continue;
+    try {
+      const target = new URL(raw);
+      if (target.protocol !== 'https:' || !IMG_HOST_ALLOW.some(re => re.test(target.hostname))) continue;
+      const buf = await fetchCdnImage(target);
+      if (!buf || !buf.length) continue;
+      const tmp = imgStorePath(stream.id, type) + '.tmp';
+      fs.writeFileSync(tmp, buf);
+      fs.renameSync(tmp, imgStorePath(stream.id, type)); // atomik: tidak pernah setengah jadi
+    } catch (_) { /* best-effort — fallback SVG tetap ada */ }
+  }
+}
+
+/** Seed sekali saat start untuk stream yang belum punya gambar tersimpan. */
+function seedMissingImages() {
+  const streams = db.listStreams();
+  const missing = streams.filter(s =>
+    !fs.existsSync(imgStorePath(s.id, 'cover')) || !fs.existsSync(imgStorePath(s.id, 'avatar')));
+  if (!missing.length) return;
+  console.log(`[img] seed ${missing.length} stream yang belum punya gambar tersimpan…`);
+  // sekuensial & di background — tidak menahan startup
+  missing.reduce((p, s) => p.then(() => downloadStreamImages(s)), Promise.resolve())
+    .catch(() => {});
+}
+
+// Sajikan gambar tersimpan — TIDAK menyentuh CDN sama sekali.
+app.get('/img/:id/:type', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const type = req.params.type === 'avatar' ? 'avatar' : 'cover';
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).end();
+  // no-cache → revalidasi murah (304) tiap render; gambar baru setelah 🔄 langsung terlihat
+  res.set('Cache-Control', 'no-cache');
+  try {
+    const buf = fs.readFileSync(imgStorePath(id, type));
+    if (buf.length) return res.set('Content-Type', sniffImageType(buf)).send(buf);
+  } catch (_) { /* belum ada file */ }
+  res.set('Content-Type', 'image/svg+xml').send(fallbackImageSvg(req.query.t));
+});
+
 // Paksa refresh satu stream sekarang (admin)
 app.post('/api/streams/:id/refresh', adminOnly, wrapAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const stream = await poller.refreshStream(id);
   if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
+  downloadStreamImages(stream).catch(() => {}); // 🔄 manual → perbarui gambar juga
   res.json(stream);
 }));
 
@@ -675,6 +741,7 @@ const server = app.listen(PORT, () => {
     console.log(`[browser] ${killed} proses Chromium basi dari run sebelumnya dihentikan`);
   }
   poller.startPoller();
+  seedMissingImages(); // isi toko gambar untuk stream lama (sekali, background)
 });
 
 async function shutdown() {
