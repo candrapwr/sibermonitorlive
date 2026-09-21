@@ -684,7 +684,8 @@ app.get('/img/:id/:type', (req, res) => {
 // (data paling lengkap); poller otomatis tetap jalur API ringan
 app.post('/api/streams/:id/refresh', adminOnly, wrapAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const stream = await poller.refreshStream(id, { via: 'browser' });
+  // manual: true → satu request user, boleh menembus jeda backoff 403
+  const stream = await poller.refreshStream(id, { via: 'browser', manual: true });
   if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
   // AWAIT unduhan gambar: respons baru dikirim setelah file toko diperbarui,
   // supaya re-render di UI langsung menampilkan cover/avatar baru

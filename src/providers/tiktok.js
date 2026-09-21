@@ -184,8 +184,40 @@ function loadTiktokCookieHeader() {
   return tiktokCookieHeader;
 }
 
+/**
+ * Backoff global endpoint room API.
+ *
+ * Diverifikasi langsung: setelah beberapa request cepat berturut-turut, TikTok
+ * membalas SELURUH request ke /api-live/user/room/ dengan HTTP 403 — baik
+ * jalur HTTP maupun jalur browser (sesi sama-sama kena). Kalau terus
+ * dipaksa, blokade makin lama (semua stream tampak "live private"/error).
+ * Karena itu tiap 403 menaikkan jeda global eksponensial; request manual
+ * (tombol 🔄, satu request user) boleh menembus jeda.
+ */
+const throttle = { blockedUntil: 0, strikes: 0 };
+const BACKOFF_BASE_MS = 90 * 1000;
+const BACKOFF_MAX_MS = 10 * 60 * 1000;
+
+function throttleGate(manual) {
+  if (manual || Date.now() >= throttle.blockedUntil) return;
+  const s = Math.ceil((throttle.blockedUntil - Date.now()) / 1000);
+  const err = new Error(`Endpoint TikTok sedang dibatasi (403) — jeda ${s}s lagi`);
+  err.code = 'TIKTOK_THROTTLED';
+  throw err;
+}
+
+function noteThrottled() {
+  throttle.strikes += 1;
+  const backoff = Math.min(BACKOFF_BASE_MS * Math.pow(2, throttle.strikes - 1), BACKOFF_MAX_MS);
+  throttle.blockedUntil = Date.now() + backoff;
+  console.warn(`[tiktok] room API dibalas 403 — backoff global ${Math.round(backoff / 1000)}s (strike ${throttle.strikes})`);
+}
+
+function noteOk() { throttle.strikes = 0; }
+
 /** Ambil data status live dari endpoint HTTP tanpa membuka browser. */
-async function fetchLiveApi(username) {
+async function fetchLiveApi(username, opts = {}) {
+  throttleGate(opts.manual);
   const url = `https://www.tiktok.com/api-live/user/room/?aid=${LIVE_API_AID}`
     + `&uniqueId=${encodeURIComponent(username)}&sourceType=${LIVE_API_SOURCE_TYPE}`;
   const cookie = loadTiktokCookieHeader();
@@ -197,9 +229,15 @@ async function fetchLiveApi(username) {
       ...(cookie ? { Cookie: cookie } : {})
     }
   });
+  if (res.status === 403 || res.status === 429) {
+    noteThrottled();
+    throw new Error(`TikTok live API HTTP ${res.status} (dibatasi)`);
+  }
   if (!res.ok) throw new Error(`TikTok live API HTTP ${res.status}`);
   try {
-    return await res.json();
+    const payload = await res.json();
+    noteOk();
+    return payload;
   } catch (_) {
     throw new Error('Respons TikTok live API bukan JSON yang valid');
   }
@@ -325,27 +363,38 @@ async function getStreamInfo(username, opts = {}) {
   // TikTok — data paling lengkap, tidak bergantung umur cookie sesi.
   if (opts.via === 'browser') {
     try {
-      return await getStreamInfoViaBrowser(normalizedUsername);
+      return await getStreamInfoViaBrowser(normalizedUsername, opts);
     } catch (e) {
+      if (e.code === 'TIKTOK_THROTTLED') throw e; // jeda global — jangan fallback paksa
       // Chromium bermasalah → jangan gagalkan refresh, fallback jalur API
       console.error('[tiktok] cek via browser gagal, fallback ke API:', e.message);
     }
   }
 
-  const payload = await fetchLiveApi(normalizedUsername);
+  const payload = await fetchLiveApi(normalizedUsername, opts);
   return normalizeLiveApi(payload, normalizedUsername);
 }
 
 /** Buka URL live API langsung di Chromium persisten lalu normalisasi. */
-async function getStreamInfoViaBrowser(username) {
+async function getStreamInfoViaBrowser(username, opts = {}) {
+  throttleGate(opts.manual);
   const url = `https://www.tiktok.com/api-live/user/room/?aid=${LIVE_API_AID}`
     + `&uniqueId=${encodeURIComponent(username)}&sourceType=${LIVE_API_SOURCE_TYPE}`;
   return withContext(async (ctx) => {
     const page = await ctx.newPage();
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
+      const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
+      const status = res ? res.status() : 0;
+      if (status === 403 || status === 429) {
+        noteThrottled();
+        const err = new Error(`TikTok live API HTTP ${status} via browser (dibatasi)`);
+        err.code = 'TIKTOK_THROTTLED';
+        throw err;
+      }
       const body = await page.evaluate(() => document.body.innerText);
-      return normalizeLiveApi(JSON.parse(body), username);
+      const payload = JSON.parse(body);
+      noteOk();
+      return normalizeLiveApi(payload, username);
     } finally {
       await page.close().catch(() => {});
     }
