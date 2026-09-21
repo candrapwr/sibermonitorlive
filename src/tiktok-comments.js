@@ -121,6 +121,63 @@ function addComment(room, comment) {
   emit(room, { type: item.type, comment: item });
 }
 
+/**
+ * Deteksi elemen scroll list chat (yang benar-benar memuat baris chat).
+ * Return { atBottom } atau null bila list belum tersedia.
+ */
+async function chatScrollerState(page) {
+  return page.evaluate(() => {
+    const chat = document.querySelector('[data-e2e="live-chat-container"]') ||
+      document.querySelector('[data-e2e="public-screen-live-chat-slot"]');
+    if (!chat) return null;
+    const rows = chat.querySelectorAll('[data-e2e="chat-message"], [data-index]');
+    if (!rows.length) return null;
+    const el = [...chat.querySelectorAll('*')].filter(node => {
+      if (node.clientHeight < 40 || node.scrollHeight <= node.clientHeight + 4) return false;
+      const style = getComputedStyle(node);
+      if (style.overflowY !== 'auto' && style.overflowY !== 'scroll') return false;
+      return [...rows].some(row => node.contains(row));
+    }).sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+    if (!el) return null;
+    return { atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 12 };
+  }).catch(() => null);
+}
+
+/**
+ * Kembalikan list chat ke posisi live (paling bawah).
+ *
+ * TikTok berhenti me-render chat baru selama list di-scroll ke atas (mode
+ * "baca history") dan TIDAK mengaktifkan kembali auto-follow hanya dengan
+ * set scrollTop — state internalnya hanya ter-reset lewat gesture wheel-down
+ * asli. Karena itu pemulihan memakai mouse.wheel, bukan manipulasi scrollTop.
+ */
+async function wheelToBottom(room, page) {
+  for (let attempt = 0; attempt < 12 && !room.stopRequested; attempt++) {
+    const state = await chatScrollerState(page);
+    if (!state || state.atBottom) break;
+    const box = await page.locator('[data-e2e="live-chat-container"]').boundingBox().catch(() => null);
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.8).catch(() => {});
+      await page.mouse.wheel(0, 800).catch(() => {});
+    }
+    await sleep(350);
+  }
+  // Sabuk pengaman: pastikan posisi DOM benar-benar di ujung bawah.
+  await page.evaluate(() => {
+    const chat = document.querySelector('[data-e2e="live-chat-container"]') ||
+      document.querySelector('[data-e2e="public-screen-live-chat-slot"]');
+    if (!chat) return;
+    const rows = chat.querySelectorAll('[data-e2e="chat-message"], [data-index]');
+    const el = [...chat.querySelectorAll('*')].filter(node => {
+      if (node.clientHeight < 40 || node.scrollHeight <= node.clientHeight + 4) return false;
+      const style = getComputedStyle(node);
+      if (style.overflowY !== 'auto' && style.overflowY !== 'scroll') return false;
+      return [...rows].some(row => node.contains(row));
+    }).sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+    if (el) el.scrollTop = el.scrollHeight;
+  }).catch(() => {});
+}
+
 async function scrapeComments(room, page, options = {}) {
   const result = await page.evaluate(() => {
     const clean = v => String(v || '').replace(/\s+/g, ' ').trim();
@@ -229,14 +286,10 @@ async function bootstrapBacklog(room, page) {
     }
   }
   for (const item of history) addComment(room, item);
-  await page.evaluate(() => {
-    const chat = document.querySelector('[data-e2e="live-chat-container"]') || document.querySelector('[data-e2e="public-screen-live-chat-slot"]');
-    if (!chat) return;
-    const nodes = [chat, ...chat.querySelectorAll('*')];
-    const el = nodes.filter(node => node.scrollHeight > node.clientHeight + 4)
-      .sort((a, b) => (b.clientHeight * b.clientWidth) - (a.clientHeight * a.clientWidth))[0];
-    if (el) el.scrollTop = el.scrollHeight;
-  }).catch(() => {});
+  // Pulihkan live feed: wheel-down asli sampai list kembali di paling bawah.
+  // (Set scrollTop saja tidak me-reset auto-follow internal TikTok — tanpa ini
+  // chat baru berhenti dirender dan panel komentar tidak menerima event.)
+  await wheelToBottom(room, page);
 }
 
 async function runRoom(room, stream) {
@@ -266,6 +319,8 @@ async function runRoom(room, stream) {
         await sleep(5000);
         continue;
       }
+      const scroller = await chatScrollerState(page);
+      if (scroller && !scroller.atBottom) await wheelToBottom(room, page);
       await scrapeComments(room, page);
       await sleep(2000);
     }
