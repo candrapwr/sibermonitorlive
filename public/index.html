@@ -176,6 +176,27 @@
         </div>
     </div>
 
+    <!-- TikTok LIVE comments modal -->
+    <div class="modal-overlay comments-overlay" id="commentsModal">
+        <div class="modal comments-modal">
+            <div class="modal-header comments-header">
+                <div>
+                    <h2 id="commentsModalTitle">💬 Komentar LIVE</h2>
+                    <div class="comments-subtitle" id="commentsModalSubtitle">Menghubungkan ke stream…</div>
+                </div>
+                <button class="modal-close" onclick="closeCommentsModal()">×</button>
+            </div>
+            <div class="comments-status" id="commentsStatus"><span class="status-dot"></span><span>Menyiapkan koneksi…</span></div>
+            <div class="comments-list" id="commentsList">
+                <div class="comments-empty"><div>💬</div><p>Memuat komentar…</p></div>
+            </div>
+            <div class="comments-footer">
+                <span id="commentsCount">0 komentar</span>
+                <button class="btn" onclick="clearCommentsView()">Bersihkan tampilan</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">
         <span class="toast-icon" id="toastIcon">✅</span>

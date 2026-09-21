@@ -1209,3 +1209,34 @@ body:not(.is-admin) .admin-only {
     border-color: #ff0050;
     color: #ff0050;
 }
+
+/* TikTok LIVE comments */
+.comments-overlay { align-items: flex-end; justify-content: flex-end; padding: 24px; }
+.comments-modal { width: min(440px, calc(100vw - 30px)); max-width: none; height: min(680px, calc(100vh - 48px)); padding: 0; display: flex; flex-direction: column; overflow: hidden; border-color: rgba(0,242,234,.25); box-shadow: 0 24px 90px rgba(0,0,0,.7); }
+.comments-header { padding: 18px 20px 14px; margin: 0; background: linear-gradient(135deg, #17172b, #111118); border-bottom: 1px solid #26263a; }
+.comments-header h2 { margin: 0 0 4px; font-size: 17px; }
+.comments-subtitle { color: #8892b0; font-size: 11px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.comments-status { display: flex; align-items: center; gap: 7px; padding: 9px 20px; background: #0d0d14; border-bottom: 1px solid #1d1d2c; color: #8892b0; font-size: 11px; }
+.comments-status.connected { color: #75f5d1; }
+.comments-status.warning { color: #ffc56d; }
+.comments-status.error { color: #ff7895; }
+.comments-status .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #8892b0; box-shadow: 0 0 0 3px rgba(136,146,176,.12); }
+.comments-status.connected .status-dot { background: #42e6a4; box-shadow: 0 0 0 3px rgba(66,230,164,.13); }
+.comments-status.warning .status-dot { background: #ffb347; box-shadow: 0 0 0 3px rgba(255,179,71,.13); }
+.comments-status.error .status-dot { background: #ff4f78; box-shadow: 0 0 0 3px rgba(255,79,120,.13); }
+.comments-list { flex: 1; overflow-y: auto; padding: 14px 12px; background: radial-gradient(circle at 50% 0%, rgba(15,52,96,.18), transparent 45%), #0d0d14; }
+.comment-row { display: flex; gap: 9px; padding: 8px 7px; border-radius: 9px; animation: commentIn .2s ease-out; }
+.comment-row:hover { background: rgba(255,255,255,.035); }
+.comment-avatar { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#ff0050,#00f2ea); color: #fff; font-size: 11px; font-weight: 700; }
+.comment-body { min-width: 0; }
+.comment-author { color: #00f2ea; font-size: 11px; font-weight: 700; margin-bottom: 2px; }
+.comment-text { color: #e6e6ee; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.comments-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #69708a; font-size: 12px; text-align: center; }
+.comments-empty > div { font-size: 38px; opacity: .45; margin-bottom: 8px; }
+.comments-empty p { margin: 0; }
+.comments-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; background: #111118; border-top: 1px solid #26263a; color: #69708a; font-size: 11px; }
+.comments-footer .btn { padding: 6px 9px; font-size: 10px; }
+.comment-btn { color: #ff8cb0; }
+.comment-btn:hover { color: #ff0050; }
+@keyframes commentIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 600px) { .comments-overlay { padding: 10px; } .comments-modal { width: 100%; height: min(720px, calc(100vh - 20px)); } }

@@ -42,6 +42,7 @@ const poller = require('./src/poller');
 const tiktok = require('./src/providers/tiktok');
 const youtube = require('./src/providers/youtube');
 const { closeBrowser, killStaleBrowsers } = require('./src/browser');
+const tiktokComments = require('./src/tiktok-comments');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -692,6 +693,59 @@ app.post('/api/streams/:id/refresh', adminOnly, wrapAsync(async (req, res) => {
   res.json(stream);
 }));
 
+// Komentar TikTok LIVE — profile anonim terpisah, streaming via SSE
+app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const stream = db.getStream(id);
+  if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
+  if (stream.platform !== 'tiktok') return res.status(400).json({ error: 'Komentar saat ini hanya tersedia untuk TikTok' });
+  if (!stream.is_live) return res.status(409).json({ error: 'Stream sedang offline' });
+
+  const state = await tiktokComments.start(id, stream);
+  res.set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  send('snapshot', state);
+  const unsubscribe = tiktokComments.subscribe(id, event => send(event.type, event.type === 'comment' ? event.comment : event));
+  const heartbeat = setInterval(() => {
+    try { res.write(`: heartbeat ${Date.now()}\n\n`); } catch (_) {}
+  }, 15000);
+  let cleanedUp = false;
+  const cleanup = async () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+    // Satu browser/tab dibuat untuk room ini. Ketika modal/SSE ditutup,
+    // hentikan room agar page Playwright ikut ditutup.
+    await tiktokComments.stop(id).catch(() => {});
+  };
+  req.on('close', cleanup);
+}));
+
+app.get('/api/streams/:id/comments/status', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const stream = db.getStream(id);
+  if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
+  res.json(tiktokComments.get(id));
+});
+
+app.post('/api/streams/:id/comments/stop', adminOnly, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const stream = db.getStream(id);
+  if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
+  await tiktokComments.stop(id);
+  res.json(tiktokComments.get(id));
+});
+
 // Riwayat snapshot sebuah stream
 app.get('/api/streams/:id/history', (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -770,6 +824,7 @@ async function shutdown() {
   console.log('[server] shutdown…');
   poller.stopPoller();
   server.close();
+  await tiktokComments.close();
   await closeBrowser();
   db.close(); // checkpoint WAL → data aman saat proses berhenti
   process.exit(0);

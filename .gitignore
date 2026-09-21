@@ -4,3 +4,4 @@ public/vendor/
 *.log
 .env
 cookies-tiktok.json
+cookies-tiktok-comments.json

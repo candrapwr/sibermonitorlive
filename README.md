@@ -126,6 +126,72 @@ Catatan:
 - File berisi semua cookie TikTok (sessionid + identitas device), jadi server dikenal seperti perangkat laptop Anda
 - Ulangi proses ini kalau sesi kedaluwarsa/di-logout dari HP
 
+### Migrasi sesi untuk profil komentar TikTok
+
+Profil komentar menggunakan direktori terpisah dari profil pencarian/login utama:
+
+```text
+data/chromium-profile/          # search/login utama
+data/chromium-comment-profile/  # browser komentar LIVE
+```
+
+Jika browser komentar di server membutuhkan sesi TikTok, cookie dapat dimigrasikan dengan mekanisme yang sama. **Jangan menyalin folder profil lintas OS secara langsung**; gunakan export/import cookie agar cookie dienkripsi ulang dengan kunci OS server.
+
+#### 1. Export cookie comment profile di laptop
+
+Pastikan aplikasi tidak sedang berjalan, lalu export dengan target profil komentar dan nama file terpisah:
+
+```bash
+node scripts/export-comment-cookies.js
+```
+
+File `cookies-tiktok-comments.json` berisi cookie comment profile dan harus diperlakukan sebagai rahasia. Login tidak diperlukan; jika profil anonim tidak memiliki `sessionid`, itu normal.
+
+#### 2. Kirim cookie ke server
+
+```bash
+scp cookies-tiktok-comments.json user@server:/home/user/sibermonitor-live/
+```
+
+Sesuaikan path dan user dengan instalasi production Anda.
+
+#### 3. Import ke comment profile di server
+
+Stop aplikasi sebelum mengubah persistent Chromium profile:
+
+```bash
+ssh user@server "cd /home/user/sibermonitor-live && \\
+  pm2 stop sibermonitor-live && \\
+  node scripts/import-comment-cookies.js cookies-tiktok-comments.json && \\
+  pm2 start sibermonitor-live && \\
+  rm cookies-tiktok-comments.json"
+```
+
+Atau jalankan langkahnya satu per satu jika ingin melihat output verifikasi. Import dianggap berhasil jika muncul:
+
+```text
+✅ ... cookie komentar diimpor dan terenkripsi ulang oleh OS server
+ℹ️ Jika tidak ada `sessionid`, comment profile tetap berjalan dalam mode anonim
+```
+
+#### 4. Pastikan manager memakai profil yang sama
+
+Jika lokasi data default diubah, set path comment profile secara eksplisit di environment production:
+
+```env
+TIKTOK_COMMENT_PROFILE_DIR=/home/user/sibermonitor-live/data/chromium-comment-profile
+```
+
+`TIKTOK_COMMENT_PROFILE_DIR` harus menunjuk ke direktori yang sama dengan target `CHROMIUM_PROFILE_DIR` saat import.
+
+#### Catatan keamanan dan operasional
+
+- Jangan memakai `cookies-tiktok-comments.json` sebagai file commit atau membagikannya.
+- Hapus file cookie dari laptop dan server setelah import selesai.
+- Sesi dapat kedaluwarsa atau dibatalkan TikTok; ulangi export/import bila diperlukan.
+- Profil komentar tetap terpisah dari profil search/login utama.
+- Jika komentar dapat dibaca anonim, migrasi session tidak wajib; gunakan hanya bila production memang membutuhkan session.
+
 ---
 
 ## 🚀 Deployment (PM2)

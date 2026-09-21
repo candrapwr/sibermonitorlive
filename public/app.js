@@ -25,6 +25,12 @@ const state = {
 
 const hlsMap = new Map();   // key → instance hls.js (HLS) aktif
 const flvMap = new Map();   // key → instance mpegts.js (FLV) aktif
+const commentsState = {
+    streamId: null,
+    eventSource: null,
+    items: [],
+    seen: new Set()
+};
 
 const isAdmin = () => state.user?.role === 'admin';
 
@@ -79,6 +85,97 @@ function showToast(icon, message, isError = false) {
     toastTimeout = setTimeout(() => t.classList.remove('show'), 3500);
 }
 
+function setCommentsStatus(text, kind = 'connecting') {
+    const el = $('commentsStatus');
+    if (!el) return;
+    el.className = `comments-status ${kind}`;
+    el.innerHTML = `<span class="status-dot"></span><span>${esc(text)}</span>`;
+}
+
+function stopCommentsStream() {
+    if (commentsState.eventSource) {
+        commentsState.eventSource.close();
+        commentsState.eventSource = null;
+    }
+    commentsState.streamId = null;
+}
+
+function clearCommentsView() {
+    commentsState.items = [];
+    commentsState.seen.clear();
+    const list = $('commentsList');
+    if (list) list.innerHTML = '<div class="comments-empty"><div>💬</div><p>Menunggu komentar baru…</p></div>';
+    if ($('commentsCount')) $('commentsCount').textContent = '0 komentar';
+}
+
+function appendComments(items) {
+    const list = $('commentsList');
+    if (!list) return;
+    const wasBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+    const empty = list.querySelector('.comments-empty');
+    if (empty) empty.remove();
+    for (const item of items || []) {
+        if (!item || !item.id || commentsState.seen.has(item.id)) continue;
+        commentsState.seen.add(item.id);
+        commentsState.items.push(item);
+        const row = document.createElement('div');
+        row.className = 'comment-row';
+        row.innerHTML = `<div class="comment-avatar">${esc(String(item.author || '?').charAt(0).toUpperCase())}</div>
+            <div class="comment-body"><div class="comment-author">${esc(item.author || 'Anonim')}</div><div class="comment-text">${esc(item.text || '')}</div></div>`;
+        list.appendChild(row);
+    }
+    while (list.children.length > 250) list.firstElementChild.remove();
+    if ($('commentsCount')) $('commentsCount').textContent = `${commentsState.items.length} komentar`;
+    if (wasBottom) list.scrollTop = list.scrollHeight;
+}
+
+function closeCommentsModal() {
+    stopCommentsStream();
+    const modal = $('commentsModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function openCommentsModal(id) {
+    if (!state.user) return;
+    const stream = state.streams.find(s => s.id === id);
+    if (!stream) return;
+    if (stream.platform !== 'tiktok' || !stream.is_live) {
+        showToast('ℹ️', 'Komentar hanya tersedia saat TikTok sedang LIVE', true);
+        return;
+    }
+    stopCommentsStream();
+    commentsState.streamId = id;
+    commentsState.items = [];
+    commentsState.seen.clear();
+    $('commentsModalTitle').textContent = `💬 ${stream.handle || stream.display_name || 'TikTok LIVE'}`;
+    $('commentsModalSubtitle').textContent = stream.title || 'Komentar realtime';
+    clearCommentsView();
+    $('commentsModal').classList.add('active');
+    setCommentsStatus('Menghubungkan ke LIVE…', 'connecting');
+
+    const es = new EventSource(`/api/streams/${id}/comments`);
+    commentsState.eventSource = es;
+    es.addEventListener('snapshot', e => {
+        const data = JSON.parse(e.data);
+        appendComments(data.comments || []);
+        setCommentsStatus(data.status === 'needs_verification' ? 'Perlu verifikasi browser' : 'Terhubung', data.status === 'needs_verification' ? 'warning' : 'connected');
+    });
+    es.addEventListener('status', e => {
+        const data = JSON.parse(e.data);
+        const labels = { connecting: 'Membuka browser komentar…', connected: 'Komentar realtime aktif', needs_verification: 'CAPTCHA perlu diselesaikan di browser server', error: data.error || 'Koneksi komentar gagal', stopped: 'Koneksi dihentikan' };
+        const kind = data.status === 'connected' ? 'connected' : data.status === 'needs_verification' ? 'warning' : data.status === 'error' ? 'error' : 'connecting';
+        setCommentsStatus(labels[data.status] || data.status, kind);
+    });
+    es.addEventListener('comment', e => {
+        appendComments([JSON.parse(e.data)]);
+        setCommentsStatus('Komentar realtime aktif', 'connected');
+    });
+    es.onerror = () => {
+        if (commentsState.eventSource !== es) return;
+        setCommentsStatus('Koneksi komentar terputus', 'error');
+    };
+}
+
 async function api(path, opts = {}) {
     const res = await fetch(path, {
         headers: { 'Content-Type': 'application/json' },
@@ -115,6 +212,7 @@ function hideLogin() {
 async function logout() {
     try { await api('/api/auth/logout', { method: 'POST' }); } catch (_) { /* abaikan */ }
     state.user = null;
+    closeCommentsModal();
     stopAllPlayers();
     state.streams = [];
     state.categories = [];
@@ -461,6 +559,10 @@ function cardHtml(item, monitored) {
     const privateLive = item.platform === 'tiktok' && live && !!item.private_live;
     const key = monitored ? 's-' + item.id : 'r-' + item._idx;
 
+    const searchSaved = !monitored && isSearchSaved(item);
+    const commentAction = monitored && item.platform === 'tiktok' && item.is_live
+        ? `<button class="icon-btn comment-btn" onclick="openCommentsModal(${item.id})" title="Buka komentar LIVE" aria-label="Buka komentar LIVE">💬</button>`
+        : '';
     const actions = monitored
         ? (isAdmin()
             ? `
@@ -470,11 +572,14 @@ function cardHtml(item, monitored) {
                 onclick="togglePriority(${item.id})" title="Toggle High Priority">${item.priority === 'high' ? '🚩' : '🏳'}</button>
         <button class="save-btn icon-btn ${item.saved ? 'saved' : ''}" onclick="toggleSave(${item.id})"
                 title="${item.saved ? 'Hapus dari Saved' : 'Simpan ke Saved'}">${item.saved ? '📌' : '🔖'}</button>
-        <button class="icon-btn" onclick="deleteStream(${item.id})" title="Hapus dari monitoring">🗑</button>`
-            : '')
+        <button class="icon-btn" onclick="deleteStream(${item.id})" title="Hapus dari monitoring">🗑</button>
+        ${commentAction}`
+            : commentAction)
         : (isAdmin()
-            ? `<button class="save-btn icon-btn ${isSearchSaved(item) ? 'saved' : ''}" onclick="saveFromSearch(${item._idx})"
-                title="${isSearchSaved(item) ? 'Sudah tersimpan' : 'Klik untuk masuk list Saved'}">${isSearchSaved(item) ? '📌' : '🔖'}</button>`
+            ? `<button class="save-btn icon-btn ${searchSaved ? 'saved' : ''}"
+                onclick="${searchSaved ? `showToast('ℹ️', 'Stream ini sudah ada di Saved')` : `saveFromSearch(${item._idx})`}" 
+                title="${searchSaved ? 'Sudah tersimpan di Saved' : 'Simpan ke Saved lalu pilih kategori'}"
+                aria-label="${searchSaved ? 'Sudah tersimpan di Saved' : 'Simpan ke Saved'}">${searchSaved ? '📌' : '🔖'}</button>`
             : '');
 
     const tags = [
@@ -1161,10 +1266,15 @@ async function saveFromSearch(idx) {
     const item = state.searchResults && state.searchResults[idx];
     if (!item) return;
 
-    // Ada kategori → pilih dulu lewat modal cepat; belum ada kategori →
-    // langsung masuk Saved tanpa kategori (label "Saved" otomatis)
-    if (state.categories.length > 0) return openCatPick(idx);
-    await saveFromSearchNow(idx, null);
+    // Jangan menyimpan ulang item yang sudah ada di monitoring/Saved.
+    if (isSearchSaved(item)) {
+        showToast('ℹ️', 'Stream ini sudah ada di Saved');
+        return;
+    }
+
+    // Selalu lewati dialog pilihan kategori. Jika belum ada kategori,
+    // dialog tetap menyediakan pilihan "Tanpa Kategori (Saved)".
+    openCatPick(idx);
 }
 
 /** Modal pilih kategori cepat saat menyimpan dari hasil pencarian. */
@@ -1180,7 +1290,10 @@ function openCatPick(idx) {
                 `<button class="cat-pick-chip" onclick="saveFromSearchNow(${idx}, ${c.id})" title="${esc(c.name)}">🏷 ${esc(c.name)}</button>`
             ).join('')}
             <button class="cat-pick-chip plain" onclick="saveFromSearchNow(${idx}, null)">🔖 Tanpa Kategori (Saved)</button>
-        </div>`;
+        </div>
+        ${state.categories.length === 0
+            ? '<div class="form-hint" style="margin-top:10px;">Belum ada kategori. Stream akan disimpan ke Saved tanpa kategori.</div>'
+            : ''}`;
     $('catPickModal').classList.add('active');
 }
 
@@ -1284,6 +1397,9 @@ function bindEvents() {
     });
     $('usersModal').addEventListener('click', function (e) {
         if (e.target === this) closeUsersPanel();
+    });
+    $('commentsModal').addEventListener('click', function (e) {
+        if (e.target === this) closeCommentsModal();
     });
 }
 
