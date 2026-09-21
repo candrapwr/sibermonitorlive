@@ -98,7 +98,7 @@ function addComment(room, comment) {
   const text = String(comment.text || '').trim();
   const author = String(comment.author || '').trim();
   if (!text || !author || text.length > 1000) return;
-  const key = `${author}\u0000${text}`;
+  const key = `${comment.type || 'comment'}\u0000${author}\u0000${text}`;
   // DOM can contain the same item in multiple nested nodes. A short-lived
   // content key prevents duplicate events without requiring platform IDs.
   if (room.seen.has(key)) return;
@@ -109,37 +109,134 @@ function addComment(room, comment) {
   const item = {
     id: `${room.streamId}-${now()}-${Math.random().toString(36).slice(2, 8)}`,
     stream_id: room.streamId,
+    type: comment.type || 'comment',
     author,
     text,
+    ...(comment.gift ? { gift: comment.gift, quantity: comment.quantity || 1, gift_image: comment.gift_image || null } : {}),
     received_at: now()
   };
   room.comments.push(item);
   if (room.comments.length > MAX_COMMENTS) room.comments.splice(0, room.comments.length - MAX_COMMENTS);
   room.lastActivity = item.received_at;
-  emit(room, { type: 'comment', comment: item });
+  emit(room, { type: item.type, comment: item });
 }
 
-async function scrapeComments(room, page) {
+async function scrapeComments(room, page, options = {}) {
   const result = await page.evaluate(() => {
-    const bad = /^(LIVE|Penonton|Ikuti|Kirim|Komentar|mengikuti host|sudah bergabung|mengirim|membagikan LIVE|No\.\s*\d+|Baru|Lihat semua|Perusahaan|Program|Ketentuan dan Kebijakan|©\s*\d{4}|Mawar|Rose|Gift|Like|Follow|×\s*\d+)$/i;
     const clean = v => String(v || '').replace(/\s+/g, ' ').trim();
     const out = [];
     const seen = new Set();
+    let order = 0;
+    const add = (item, node) => {
+      const key = `${item.type}\u0000${item.author}\u0000${item.text}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        const rect = node?.getBoundingClientRect?.();
+        out.push({ ...item, _order: order++, _top: rect ? rect.top : order });
+      }
+    };
+
     for (const el of document.querySelectorAll('[data-e2e="chat-message"]')) {
+      const owner = el.querySelector('[data-e2e="message-owner-name"]');
+      const author = clean(owner?.getAttribute('title') || owner?.textContent);
+      const content = [...el.querySelectorAll(':scope .w-full.break-words')]
+        .map(node => clean(node.textContent)).filter(Boolean);
       const parts = String(el.innerText || '').split(/\n+/).map(clean).filter(Boolean);
-      if (parts.length < 2) continue;
-      // TikTok web format: author, optional badge/rank, then comment text.
-      const comment = parts[parts.length - 1];
-      let author = parts[parts.length - 2];
-      if (/^No\.\s*\d+$/i.test(author) && parts.length >= 3) author = parts[parts.length - 3];
-      if (!author || !comment || author === comment || bad.test(author) || bad.test(comment)) continue;
-      if (author.length > 120 || comment.length < 1 || comment.length > 1000) continue;
-      const key = author + '\u0000' + comment;
-      if (!seen.has(key)) { seen.add(key); out.push({ author, text: comment }); }
+      const text = content[content.length - 1] || parts[parts.length - 1];
+      if (author && text && author !== text && text.length <= 1000) add({ type: 'comment', author, text }, el);
     }
-    return out.slice(-80);
+
+    for (const el of document.querySelectorAll('[data-index]')) {
+      const owner = el.querySelector('[data-e2e="message-owner-name"]');
+      if (!owner) continue;
+      const action = clean(el.innerText);
+      if (!/\b(mengirim|sent)\b/i.test(action)) continue;
+      const author = clean(owner.getAttribute('title') || owner.textContent);
+      const actionMatch = action.match(/\b(?:mengirim|sent)\b\s+(.+?)\s+[×x]\s*\d+/i);
+      const giftFromText = clean(actionMatch?.[1]);
+      const giftNode = [...el.querySelectorAll('span')].find(span => {
+        const value = clean(span.textContent);
+        return value && giftFromText && value === giftFromText;
+      });
+      const gift = giftFromText || clean(giftNode?.textContent);
+      const quantityMatch = action.match(/[×x]\s*(\d+)/i);
+      const quantity = quantityMatch ? parseInt(quantityMatch[1], 10) : 1;
+      const giftImage = giftNode?.nextElementSibling?.querySelector('img')?.src || null;
+      if (author && gift && gift.length <= 120) {
+        add({ type: 'gift', author, gift, quantity, gift_image: giftImage, text: `mengirim ${gift} × ${quantity}` }, el);
+      }
+    }
+    return out.sort((a, b) => a._top - b._top || a._order - b._order).slice(-120);
   }).catch(() => []);
+  if (options.collect) return result;
   for (const item of result) addComment(room, item);
+  return result;
+}
+
+async function bootstrapBacklog(room, page) {
+  const maxPasses = Math.max(2, parseInt(process.env.TIKTOK_COMMENT_BACKLOG_PASSES, 10) || 6);
+  let previousSignature = '';
+  const batches = [];
+  for (let pass = 0; pass < maxPasses && !room.stopRequested; pass += 1) {
+    const batch = await scrapeComments(room, page, { collect: true });
+    if (batch.length) batches.push(batch);
+    const state = await page.evaluate(() => {
+      const chat = document.querySelector('[data-e2e="live-chat-container"]') ||
+        document.querySelector('[data-e2e="public-screen-live-chat-slot"]');
+      if (!chat) return { found: false, moved: false, signature: '' };
+      const nodes = [chat, ...chat.querySelectorAll('*')];
+      const candidates = nodes.filter(el => {
+        const style = getComputedStyle(el);
+        return el.scrollHeight > el.clientHeight + 4 &&
+          (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll');
+      });
+      const row = chat.querySelector('[data-index], [data-e2e="chat-message"]');
+      const el = candidates
+        .filter(node => row && node.contains(row))
+        .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+      if (!el) return { found: false, moved: false, signature: '' };
+      const before = el.scrollTop;
+      const delta = Math.max(240, el.clientHeight * 0.8);
+      el.scrollTop = Math.max(0, el.scrollTop - delta);
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: -delta, bubbles: true }));
+      if (typeof el.scrollBy === 'function') el.scrollBy({ top: -delta, behavior: 'auto' });
+      el.dispatchEvent(new Event('scroll', { bubbles: true }));
+      const signature = [...chat.querySelectorAll('[data-e2e="chat-message"], [data-index]')]
+        .map(node => (node.innerText || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 80).join('\n');
+      return { found: true, moved: before !== el.scrollTop, atTop: el.scrollTop <= 2, signature };
+    }).catch(() => ({ found: false, moved: false, signature: '' }));
+    const box = await page.locator('[data-e2e="live-chat-container"]').boundingBox().catch(() => null);
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2).catch(() => {});
+      await page.mouse.wheel(0, -Math.max(300, Math.floor(box.height * 0.8))).catch(() => {});
+    }
+    await sleep(1200);
+    const unchanged = state.signature === previousSignature;
+    previousSignature = state.signature;
+    if (pass >= 1 && !state.found) break;
+    if (pass >= 1 && state.atTop && !state.moved && unchanged) break;
+  }
+  const history = [];
+  const historySeen = new Set();
+  for (const batch of batches.reverse()) {
+    for (const item of batch) {
+      const key = `${item.type}\u0000${item.author}\u0000${item.text}`;
+      if (!historySeen.has(key)) {
+        historySeen.add(key);
+        const { _order, _top, ...cleanItem } = item;
+        history.push(cleanItem);
+      }
+    }
+  }
+  for (const item of history) addComment(room, item);
+  await page.evaluate(() => {
+    const chat = document.querySelector('[data-e2e="live-chat-container"]') || document.querySelector('[data-e2e="public-screen-live-chat-slot"]');
+    if (!chat) return;
+    const nodes = [chat, ...chat.querySelectorAll('*')];
+    const el = nodes.filter(node => node.scrollHeight > node.clientHeight + 4)
+      .sort((a, b) => (b.clientHeight * b.clientWidth) - (a.clientHeight * a.clientWidth))[0];
+    if (el) el.scrollTop = el.scrollHeight;
+  }).catch(() => {});
 }
 
 async function runRoom(room, stream) {
@@ -156,6 +253,8 @@ async function runRoom(room, stream) {
     await page.goto(`https://www.tiktok.com/@${encodeURIComponent(username)}/live`, {
       waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT
     });
+    await bootstrapBacklog(room, page);
+    if (room.stopRequested) return;
     room.status = 'connected';
     emit(room, { type: 'status', status: room.status });
     while (!room.stopRequested) {

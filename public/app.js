@@ -119,9 +119,10 @@ function appendComments(items) {
         commentsState.seen.add(item.id);
         commentsState.items.push(item);
         const row = document.createElement('div');
-        row.className = 'comment-row';
-        row.innerHTML = `<div class="comment-avatar">${esc(String(item.author || '?').charAt(0).toUpperCase())}</div>
-            <div class="comment-body"><div class="comment-author">${esc(item.author || 'Anonim')}</div><div class="comment-text">${esc(item.text || '')}</div></div>`;
+        row.className = item.type === 'gift' ? 'comment-row comment-gift' : 'comment-row';
+        const label = item.type === 'gift' ? '🎁 ' : '';
+        row.innerHTML = `<div class="comment-avatar">${item.type === 'gift' ? '🎁' : esc(String(item.author || '?').charAt(0).toUpperCase())}</div>
+            <div class="comment-body"><div class="comment-author">${label}${esc(item.author || 'Anonim')}</div><div class="comment-text">${esc(item.text || '')}</div></div>`;
         list.appendChild(row);
     }
     while (list.children.length > 250) list.firstElementChild.remove();
@@ -158,7 +159,13 @@ function openCommentsModal(id) {
     es.addEventListener('snapshot', e => {
         const data = JSON.parse(e.data);
         appendComments(data.comments || []);
-        setCommentsStatus(data.status === 'needs_verification' ? 'Perlu verifikasi browser' : 'Terhubung', data.status === 'needs_verification' ? 'warning' : 'connected');
+        if (data.status === 'needs_verification') {
+            setCommentsStatus('Perlu verifikasi browser', 'warning');
+        } else if (data.status === 'connecting') {
+            setCommentsStatus('Memuat riwayat komentar…', 'connecting');
+        } else {
+            setCommentsStatus('Terhubung', 'connected');
+        }
     });
     es.addEventListener('status', e => {
         const data = JSON.parse(e.data);
@@ -166,10 +173,12 @@ function openCommentsModal(id) {
         const kind = data.status === 'connected' ? 'connected' : data.status === 'needs_verification' ? 'warning' : data.status === 'error' ? 'error' : 'connecting';
         setCommentsStatus(labels[data.status] || data.status, kind);
     });
-    es.addEventListener('comment', e => {
+    const appendLiveEvent = e => {
         appendComments([JSON.parse(e.data)]);
         setCommentsStatus('Komentar realtime aktif', 'connected');
-    });
+    };
+    es.addEventListener('comment', appendLiveEvent);
+    es.addEventListener('gift', appendLiveEvent);
     es.onerror = () => {
         if (commentsState.eventSource !== es) return;
         setCommentsStatus('Koneksi komentar terputus', 'error');
