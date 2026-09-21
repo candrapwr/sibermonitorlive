@@ -714,7 +714,10 @@ app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
   send('snapshot', state);
-  const unsubscribe = tiktokComments.subscribe(id, event => send(event.type, event.type === 'comment' ? event.comment : event));
+  // Semua event komentar/gift dikirim sebagai item mentah agar bentuknya
+  // sama dengan snapshot — frontend (appendComments) butuh item.id di level
+  // atas; membungkus gift sebagai {type, comment} membuatnya terbuang.
+  const unsubscribe = tiktokComments.subscribe(id, event => send(event.type, event.comment || event));
   const heartbeat = setInterval(() => {
     try { res.write(`: heartbeat ${Date.now()}\n\n`); } catch (_) {}
   }, 15000);
