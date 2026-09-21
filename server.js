@@ -724,9 +724,11 @@ app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
     cleanedUp = true;
     clearInterval(heartbeat);
     unsubscribe();
-    // Satu browser/tab dibuat untuk room ini. Ketika modal/SSE ditutup,
-    // hentikan room agar page Playwright ikut ditutup.
-    await tiktokComments.stop(id).catch(() => {});
+    // Hentikan room hanya jika ini subscriber terakhir. Subscriber lain
+    // (device/tab lain) tetap memakai page yang sama.
+    if (tiktokComments.subscriberCount(id) === 0) {
+      await tiktokComments.stop(id).catch(() => {});
+    }
   };
   req.on('close', cleanup);
 }));

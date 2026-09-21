@@ -292,23 +292,28 @@ async function start(streamId, stream) {
   return snapshot(room);
 }
 
-async function stop(streamId) {
+async function stop(streamId, options = {}) {
   const room = rooms.get(streamId);
   if (!room) return;
+  if (room.subscribers.size > 0 && !options.force) return;
   room.stopRequested = true;
   const page = room.page;
   if (page) await page.close().catch(() => {});
   if (room.task) await room.task.catch(() => {});
   if (room.subscribers.size === 0) rooms.delete(streamId);
 
-  // Satu akun hanya membuka satu room komentar. Tutup context persistent
-  // agar proses Chromium juga benar-benar terminate setelah modal ditutup.
-  if (context) {
+  // Context hanya ditutup ketika tidak ada room/tab komentar lain yang aktif.
+  const activeRooms = [...rooms.values()].some(item => item.task || item.page || item.status === 'connecting' || item.status === 'connected' || item.status === 'needs_verification');
+  if (!activeRooms && context) {
     const ctx = context;
     context = null;
     launching = null;
     await ctx.close().catch(() => {});
   }
+}
+
+function subscriberCount(streamId) {
+  return rooms.get(streamId)?.subscribers.size || 0;
 }
 
 function subscribe(streamId, fn) {
@@ -336,7 +341,7 @@ function get(streamId) {
 }
 
 async function close() {
-  for (const id of [...rooms.keys()]) await stop(id);
+  for (const id of [...rooms.keys()]) await stop(id, { force: true });
   if (context) {
     const ctx = context;
     context = null;
@@ -345,4 +350,4 @@ async function close() {
   }
 }
 
-module.exports = { start, stop, subscribe, get, close, PROFILE_DIR };
+module.exports = { start, stop, subscribe, subscriberCount, get, close, PROFILE_DIR };
