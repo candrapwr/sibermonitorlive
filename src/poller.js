@@ -20,6 +20,27 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // URL lama dipertahankan) — satu cek gagal parse tidak bisa mematikan stream.
 const offlineStreak = new Map(); // stream id → jumlah cek offline berturut-turut
 
+// Verdict "LIVE private" dari jalur HTTP ringan tidak reliabel: respons sesi
+// yang tidak dipercaya TikTok sering TANPA URL playback meski room-nya publik.
+// Sekali masuk DB, verdict ini ikut menghapus URL playback lama (lihat
+// db.updateStreamState) sehingga stream publik tampak private terus walau
+// refresh manual sudah membetulkannya. Karena itu transisi ke private hanya
+// diterima setelah dikonfirmasi jalur browser (sidik jari Chromium asli),
+// paling sekali tiap jendela waktu ini agar tidak membuka Chromium terus.
+const PRIVATE_CONFIRM_MS = (parseInt(process.env.PRIVATE_CONFIRM_SEC, 10) || 180) * 1000;
+const privateConfirmedAt = new Map(); // stream id → waktu konfirmasi browser terakhir
+
+/** Biarkan field private/playback tetap memakai nilai DB (undefined =
+ *  "jangan diubah" pada updateStreamState) — dipakai saat jalur HTTP
+ *  sendirian tidak cukup bukti untuk membalik verdict. */
+function keepDbVerdict(info) {
+  info.private_live = undefined;
+  info.playback_url = undefined;
+  info.playback_flv_url = undefined;
+  info.playback_candidates = undefined;
+  info.started_at = undefined;
+}
+
 /** Cek satu stream via provider yang sesuai → info terbaru.
  *  opts.via = 'browser' → TikTok dicek lewat Chromium (dipakai 🔄 manual). */
 async function fetchStreamInfo(stream, opts = {}) {
@@ -36,7 +57,30 @@ async function refreshStream(id, opts = {}) {
   const stream = db.getStream(id);
   if (!stream) return null;
   try {
-    const info = await fetchStreamInfo(stream, opts);
+    let info = await fetchStreamInfo(stream, opts);
+
+    // Konfirmasi "private" via browser (lihat catatan PRIVATE_CONFIRM_MS).
+    // Jalur manual (opts.via='browser') sudah dipercaya apa adanya.
+    if (!opts.via && info.is_live && info.private_live) {
+      const confirmedRecently =
+        Date.now() - (privateConfirmedAt.get(id) || 0) < PRIVATE_CONFIRM_MS;
+      if (!confirmedRecently) {
+        privateConfirmedAt.set(id, Date.now());
+        try {
+          const confirmed = await fetchStreamInfo(stream, { via: 'browser' });
+          if (confirmed.is_live) info = confirmed; // verdict browser menang
+        } catch (e) {
+          // Browser bermasalah → HTTP sendiri bukan bukti cukup: pertahankan
+          // verdict & URL playback yang sudah ada di DB.
+          console.error(`[poller] konfirmasi private #${id} via browser gagal:`, e.message);
+          keepDbVerdict(info);
+        }
+      } else {
+        // Baru saja dikonfirmasi browser dalam jendela waktu ini — jangan
+        // membalik verdict hanya dari jalur HTTP.
+        keepDbVerdict(info);
+      }
+    }
 
     // Transisi live → offline butuh konfirmasi (lihat offlineStreak)
     if (!info.is_live && stream.is_live) {
@@ -52,7 +96,10 @@ async function refreshStream(id, opts = {}) {
 
     db.updateStreamState(id, {
       is_live: !!info.is_live,
-      private_live: !!info.private_live,
+      // Jangan paksa boolean (!!): undefined berarti "pertahankan verdict DB"
+      // (lihat keepDbVerdict) — !!undefined akan memaksa false dan menghapus
+      // status private yang sudah dikonfirmasi browser.
+      private_live: info.private_live === undefined ? undefined : !!info.private_live,
       viewers: info.viewers ?? 0,
       title: info.title,
       display_name: info.display_name,
