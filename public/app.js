@@ -121,8 +121,20 @@ function appendComments(items) {
         const row = document.createElement('div');
         row.className = item.type === 'gift' ? 'comment-row comment-gift' : 'comment-row';
         const label = item.type === 'gift' ? '🎁 ' : '';
-        row.innerHTML = `<div class="comment-avatar">${item.type === 'gift' ? '🎁' : esc(String(item.author || '?').charAt(0).toUpperCase())}</div>
-            <div class="comment-body"><div class="comment-author">${label}${esc(item.author || 'Anonim')}</div><div class="comment-text">${esc(item.text || '')}</div></div>`;
+        const initial = esc(String(item.author || '?').charAt(0).toUpperCase());
+        const avatar = item.type === 'gift' ? '🎁' : initial;
+        const avatarHtml = item.avatar_url && item.type !== 'gift'
+            ? `<div class="comment-avatar comment-avatar-image"><img src="${esc(imgProxy(item.avatar_url, initial))}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span>${initial}</span></div>`
+            : `<div class="comment-avatar">${avatar}</div>`;
+        const levelHtml = Number.isInteger(item.level)
+            ? `<span class="comment-level" title="Level ${item.level}">${item.level_badge_url ? `<img src="${esc(imgProxy(item.level_badge_url, `Lv.${item.level}`))}" alt="" loading="lazy">` : ''}<span>Lv.${item.level}</span></span>`
+            : '';
+        const badgesHtml = (item.badges || []).map(badge => {
+            const image = badge.image_url ? `<img src="${esc(imgProxy(badge.image_url, badge.label || 'badge'))}" alt="" loading="lazy">` : '';
+            return `<span class="comment-badge" title="${esc(badge.label || badge.type || 'Badge')}">${image}${badge.label ? `<span>${esc(badge.label)}</span>` : ''}</span>`;
+        }).join('');
+        row.innerHTML = `${avatarHtml}
+            <div class="comment-body"><div class="comment-author-line"><div class="comment-author">${label}${esc(item.author || 'Anonim')}</div>${levelHtml}${badgesHtml}</div><div class="comment-text">${esc(item.text || '')}</div></div>`;
         list.appendChild(row);
     }
     while (list.children.length > 250) list.firstElementChild.remove();

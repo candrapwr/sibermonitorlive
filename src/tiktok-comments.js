@@ -106,12 +106,26 @@ function addComment(room, comment) {
   if (room.seen.size > MAX_COMMENTS * 4) {
     room.seen = new Set([...room.seen].slice(-MAX_COMMENTS * 2));
   }
+  const imageUrl = value => {
+    const url = String(value || '').trim();
+    return /^https?:\/\//i.test(url) ? url : null;
+  };
   const item = {
     id: `${room.streamId}-${now()}-${Math.random().toString(36).slice(2, 8)}`,
     stream_id: room.streamId,
     type: comment.type || 'comment',
     author,
     text,
+    ...(imageUrl(comment.avatar_url) ? { avatar_url: imageUrl(comment.avatar_url) } : {}),
+    ...(Number.isInteger(comment.level) ? { level: comment.level } : {}),
+    ...(imageUrl(comment.level_badge_url) ? { level_badge_url: imageUrl(comment.level_badge_url) } : {}),
+    ...(Array.isArray(comment.badges) && comment.badges.length
+      ? { badges: comment.badges.slice(0, 12).map(badge => ({
+        type: String(badge.type || 'badge'),
+        label: String(badge.label || '').trim(),
+        image_url: imageUrl(badge.image_url)
+      })).filter(badge => badge.label || badge.image_url) }
+      : {}),
     ...(comment.gift ? { gift: comment.gift, quantity: comment.quantity || 1, gift_image: comment.gift_image || null } : {}),
     received_at: now()
   };
@@ -181,6 +195,7 @@ async function wheelToBottom(room, page) {
 async function scrapeComments(room, page, options = {}) {
   const result = await page.evaluate(() => {
     const clean = v => String(v || '').replace(/\s+/g, ' ').trim();
+    const imageUrl = img => clean(img?.currentSrc || img?.src);
     const out = [];
     const seen = new Set();
     let order = 0;
@@ -192,6 +207,46 @@ async function scrapeComments(room, page, options = {}) {
         out.push({ ...item, _order: order++, _top: rect ? rect.top : order });
       }
     };
+    const parseUserMeta = (el) => {
+      const images = [...el.querySelectorAll('img')];
+      // Pada struktur chat TikTok saat ini, gambar pertama di kolom kiri
+      // adalah avatar user; gambar setelahnya adalah level/badge.
+      const avatarNode = el.firstElementChild?.querySelector('img') || images[0];
+      const avatar_url = imageUrl(avatarNode) || null;
+      const levelNode = images.find(img => /grade[_-]?badge/i.test(imageUrl(img)));
+      const level_badge_url = imageUrl(levelNode) || null;
+      let level = null;
+      if (levelNode) {
+        const wrapper = levelNode.closest('span') || levelNode.parentElement;
+        const visible = clean(wrapper?.innerText || wrapper?.textContent);
+        const visibleMatch = visible.match(/\b(\d{1,3})\b/);
+        const urlMatch = imageUrl(levelNode).match(/lv(\d+)/i);
+        const value = visibleMatch?.[1] || urlMatch?.[1];
+        if (value) level = parseInt(value, 10);
+      }
+
+      const badges = [];
+      const badgeSeen = new Set();
+      for (const img of images) {
+        if (img === avatarNode || img === levelNode) continue;
+        const image_url = imageUrl(img);
+        if (!image_url) continue;
+        const wrapper = img.closest('span') || img.parentElement;
+        const label = clean(wrapper?.innerText || wrapper?.textContent);
+        const type = /top[_-]?gifter/i.test(image_url) ? 'top_gifter' : 'badge';
+        const key = `${type}\u0000${label}\u0000${image_url}`;
+        if (badgeSeen.has(key)) continue;
+        badgeSeen.add(key);
+        badges.push({ type, label, image_url });
+      }
+
+      return {
+        ...(avatar_url ? { avatar_url } : {}),
+        ...(Number.isInteger(level) ? { level } : {}),
+        ...(level_badge_url ? { level_badge_url } : {}),
+        ...(badges.length ? { badges } : {})
+      };
+    };
 
     for (const el of document.querySelectorAll('[data-e2e="chat-message"]')) {
       const owner = el.querySelector('[data-e2e="message-owner-name"]');
@@ -200,7 +255,9 @@ async function scrapeComments(room, page, options = {}) {
         .map(node => clean(node.textContent)).filter(Boolean);
       const parts = String(el.innerText || '').split(/\n+/).map(clean).filter(Boolean);
       const text = content[content.length - 1] || parts[parts.length - 1];
-      if (author && text && author !== text && text.length <= 1000) add({ type: 'comment', author, text }, el);
+      if (author && text && author !== text && text.length <= 1000) {
+        add({ type: 'comment', author, text, ...parseUserMeta(el) }, el);
+      }
     }
 
     for (const el of document.querySelectorAll('[data-index]')) {
@@ -220,7 +277,7 @@ async function scrapeComments(room, page, options = {}) {
       const quantity = quantityMatch ? parseInt(quantityMatch[1], 10) : 1;
       const giftImage = giftNode?.nextElementSibling?.querySelector('img')?.src || null;
       if (author && gift && gift.length <= 120) {
-        add({ type: 'gift', author, gift, quantity, gift_image: giftImage, text: `mengirim ${gift} × ${quantity}` }, el);
+        add({ type: 'gift', author, gift, quantity, gift_image: giftImage, text: `mengirim ${gift} × ${quantity}`, ...parseUserMeta(el) }, el);
       }
     }
     return out.sort((a, b) => a._top - b._top || a._order - b._order).slice(-120);
