@@ -66,6 +66,9 @@ Bisa lewat **file `.env`** (salin dari `.env.example`) **atau** environment asli
 | `POLL_INTERVAL_SEC` | `60` | Interval refresh semua stream |
 | `HEADLESS` | `true` | `false` = browser engine terlihat (debug) |
 | `DATA_DIR` | `./data` | Lokasi database & profil browser |
+| `TIKTOK_DETAIL_SERVICE_URL` | `http://127.0.0.1:9001` | URL service Python `tiktok-live-checker` untuk popup detail TikTok |
+| `TIKTOK_DETAIL_TIMEOUT_MS` | `45000` | Batas waktu request detail ke service Python |
+| `TIKTOK_DETAIL_CACHE_SEC` | `20` | Cache detail per username agar tidak terlalu sering meminta data TikTok |
 
 ---
 

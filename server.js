@@ -46,6 +46,19 @@ const tiktokComments = require('./src/tiktok-comments');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
+const TIKTOK_DETAIL_SERVICE_URL = String(
+  process.env.TIKTOK_DETAIL_SERVICE_URL || 'http://127.0.0.1:9001'
+).replace(/\/+$/, '');
+const TIKTOK_DETAIL_TIMEOUT_MS = Math.max(
+  5000,
+  parseInt(process.env.TIKTOK_DETAIL_TIMEOUT_MS, 10) || 45000
+);
+const TIKTOK_DETAIL_CACHE_MS = Math.max(
+  5000,
+  parseInt(process.env.TIKTOK_DETAIL_CACHE_SEC, 10) * 1000 || 20000
+);
+const tiktokDetailCache = new Map();
+const tiktokDetailInflight = new Map();
 
 app.use(express.json());
 
@@ -148,6 +161,103 @@ function adminOnly(req, res, next) {
     return res.status(403).json({ error: 'Hanya admin yang boleh melakukan aksi ini' });
   }
   next();
+}
+
+/** Stream yang boleh diakses user saat meminta detail TikTok. */
+function getStreamForUser(req, id) {
+  if (req.user.role === 'admin') return db.getStream(id);
+  return db.listStreamsForViewer(req.user.id).find(stream => stream.id === id) || null;
+}
+
+/**
+ * Ambil detail TikTok dari service Python.
+ * Login session dicoba lebih dulu karena datanya sudah mencakup kebutuhan
+ * popup. Endpoint guest hanya dipanggil sebagai fallback saat login gagal.
+ */
+async function fetchTikTokDetail(stream) {
+  const key = String(stream.source_key || '').replace(/^@/, '').toLowerCase();
+  const cached = tiktokDetailCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  if (tiktokDetailInflight.has(key)) return tiktokDetailInflight.get(key);
+
+  const pending = (async () => {
+    const requestService = async endpoint => {
+      let target;
+      try {
+        target = new URL(endpoint, `${TIKTOK_DETAIL_SERVICE_URL}/`);
+        target.searchParams.set('u', key);
+      } catch (_) {
+        const err = new Error('URL service detail TikTok tidak valid');
+        err.status = 503;
+        throw err;
+      }
+
+      let response;
+      try {
+        response = await fetch(target, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(TIKTOK_DETAIL_TIMEOUT_MS)
+        });
+      } catch (cause) {
+        const err = new Error(`Service detail TikTok tidak dapat dihubungi: ${cause.message}`);
+        err.status = 503;
+        throw err;
+      }
+
+      let data = null;
+      try { data = await response.json(); } catch (_) { /* body bukan JSON */ }
+      if (!response.ok) {
+        const err = new Error(data?.error || `Service detail TikTok HTTP ${response.status}`);
+        err.status = 502;
+        throw err;
+      }
+      if (!data || typeof data !== 'object') {
+        const err = new Error('Respons service detail TikTok tidak valid');
+        err.status = 502;
+        throw err;
+      }
+      return data;
+    };
+
+    let loginData = null;
+    let loginFailure = null;
+    try {
+      loginData = await requestService('/api/room');
+    } catch (cause) {
+      loginFailure = cause;
+    }
+
+    let data;
+    if (loginData?.ok) {
+      data = {
+        mode: 'login',
+        logged_in: true,
+        username: key,
+        is_live: true,
+        checked_at: Date.now(),
+        login_data: loginData
+      };
+    } else {
+      const guestData = await requestService('/api/user');
+      data = {
+        ...guestData,
+        mode: 'guest',
+        logged_in: false,
+        login_data: null,
+        login_note: loginData?.reason || loginFailure?.message || 'Sesi TikTok login tidak aktif.'
+      };
+    }
+
+    tiktokDetailCache.set(key, { data, expiresAt: Date.now() + TIKTOK_DETAIL_CACHE_MS });
+    return data;
+  })();
+
+  tiktokDetailInflight.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    tiktokDetailInflight.delete(key);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -692,6 +802,21 @@ app.post('/api/streams/:id/refresh', adminOnly, wrapAsync(async (req, res) => {
   await downloadStreamImages(stream).catch(() => {});
   stream.img_v = imgVersion(id);
   res.json(stream);
+}));
+
+// Detail TikTok: login session lebih dulu, guest sebagai fallback.
+app.get('/api/streams/:id/tiktok-detail', wrapAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const stream = getStreamForUser(req, id);
+  if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
+  if (stream.platform !== 'tiktok') {
+    return res.status(400).json({ error: 'Detail ini hanya tersedia untuk TikTok' });
+  }
+  if (!stream.is_live) {
+    return res.status(409).json({ error: 'Detail hanya tersedia saat TikTok sedang LIVE' });
+  }
+  const detail = await fetchTikTokDetail(stream);
+  res.json(detail);
 }));
 
 // Komentar TikTok LIVE — profile anonim terpisah, streaming via SSE

@@ -176,6 +176,22 @@
         </div>
     </div>
 
+    <!-- TikTok detail modal: login session, atau guest sebagai fallback -->
+    <div class="modal-overlay tiktok-detail-overlay" id="tiktokDetailModal">
+        <div class="modal tiktok-detail-modal">
+            <div class="modal-header tiktok-detail-header">
+                <div>
+                    <h2 id="tiktokDetailTitle">🔎 Detail TikTok LIVE</h2>
+                    <div class="tiktok-detail-subtitle" id="tiktokDetailSubtitle">Detail room TikTok</div>
+                </div>
+                <button class="modal-close" onclick="closeTikTokDetailModal()">×</button>
+            </div>
+            <div id="tiktokDetailBody">
+                <div class="detail-loading"><div class="loading-spinner"></div><p>Menyiapkan detail…</p></div>
+            </div>
+        </div>
+    </div>
+
     <!-- TikTok LIVE comments modal -->
     <div class="modal-overlay comments-overlay" id="commentsModal">
         <div class="modal comments-modal">

@@ -31,6 +31,10 @@ const commentsState = {
     items: [],
     seen: new Set()
 };
+const tiktokDetailState = {
+    streamId: null,
+    requestId: 0
+};
 
 const isAdmin = () => state.user?.role === 'admin';
 
@@ -197,6 +201,327 @@ function openCommentsModal(id) {
     };
 }
 
+function closeTikTokDetailModal() {
+    tiktokDetailState.streamId = null;
+    tiktokDetailState.requestId += 1;
+    const modal = $('tiktokDetailModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function detailNum(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const n = Number(value);
+    return Number.isFinite(n) ? formatCount(n) : esc(String(value));
+}
+
+function detailDate(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) {
+        return typeof value === 'string' && value.trim() ? esc(value) : '—';
+    }
+    const ms = n < 1e12 ? n * 1000 : n;
+    return new Date(ms).toLocaleString('id-ID');
+}
+
+function detailHttpUrl(value) {
+    const url = String(value || '').trim();
+    return /^https?:\/\//i.test(url) ? url : '';
+}
+
+function detailImage(url, hint, className = '') {
+    const source = detailHttpUrl(url);
+    if (!source) return '';
+    return `<img class="${className}" src="${esc(imgProxy(source, hint || '?'))}" alt="" loading="lazy" onerror="this.remove()">`;
+}
+
+function detailLink(label, url) {
+    const source = detailHttpUrl(url);
+    return source
+        ? `<a class="detail-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`
+        : '';
+}
+
+function detailStat(value, label) {
+    return `<div class="detail-stat"><div class="detail-stat-value">${value}</div><div class="detail-stat-label">${esc(label)}</div></div>`;
+}
+
+function detailKv(label, value) {
+    if (value === null || value === undefined || value === '') return '';
+    return `<div class="detail-kv"><span>${esc(label)}</span><b>${value}</b></div>`;
+}
+
+function detailChip(text, tone = '') {
+    if (text === null || text === undefined || text === '') return '';
+    return `<span class="detail-chip ${tone}">${esc(String(text))}</span>`;
+}
+
+function renderDetailBattle(battle) {
+    if (!battle?.players?.length) return '';
+    return `<section class="detail-card">
+        <h3>⚔ PK / Battle</h3>
+        <div class="detail-battle">${battle.players.map((player, index) => `
+            <div class="detail-battle-player">
+                ${detailImage(player.avatar, player.nickname, 'detail-battle-avatar')}
+                <div class="detail-battle-score">${detailNum(player.score)}</div>
+                <div class="detail-battle-name">${esc(player.nickname || '—')}</div>
+                ${player.league ? `<div class="detail-muted">Liga ${esc(player.league)}</div>` : ''}
+                ${player.top_armies?.length ? `<div class="detail-muted">Top: ${player.top_armies.map(a => `${esc(a.name || '—')} (${detailNum(a.score)})`).join(' · ')}</div>` : ''}
+            </div>${index === 0 && battle.players.length > 1 ? '<div class="detail-battle-vs">VS</div>' : ''}`).join('')}</div>
+        ${battle.duration_s ? `<div class="detail-muted detail-centered">Durasi ${Math.round(Number(battle.duration_s) / 60)} menit</div>` : ''}
+        ${battle.bubble_text ? `<div class="detail-muted detail-centered">${esc(battle.bubble_text)}</div>` : ''}
+    </section>`;
+}
+
+function renderDetailStreams(streams, room) {
+    const rows = Array.isArray(streams) ? streams : [];
+    if (!rows.length && !room?.backup_flv && !room?.backup_hls) return '';
+    return `<section class="detail-card">
+        <h3>📺 Kualitas Stream</h3>
+        ${rows.length ? `<div class="detail-table-wrap"><table class="detail-table"><thead><tr><th>Kualitas</th><th>Resolusi</th><th>Codec</th><th>Bitrate</th><th>URL</th></tr></thead><tbody>
+            ${rows.map(item => `<tr><td>${esc(item.name || '—')}</td><td>${esc(item.resolution || '—')}</td><td>${esc(item.codec || '—')}</td><td>${esc(item.bitrate || '—')}</td><td>${detailLink('FLV', item.flv)} ${detailLink('HLS', item.hls)}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+        ${(room?.backup_flv || room?.backup_hls) ? `<div class="detail-kv detail-stream-backup"><span>Cadangan</span><b>${detailLink('FLV backup', room.backup_flv)} ${detailLink('HLS backup', room.backup_hls)}</b></div>` : ''}
+    </section>`;
+}
+
+function renderTikTokLoginDetail(data, stream) {
+    const login = data.login_data || {};
+    const loginRoom = login.extra?.room || {};
+    const anchor = login.extra?.anchor || {};
+    const fanClub = login.extra?.fan_club;
+    const ranks = login.ranks || {};
+    const name = anchor.nickname || stream.display_name || stream.handle || data.username || 'TikTok LIVE';
+    const topViewers = Array.isArray(ranks.top_viewers) ? ranks.top_viewers : [];
+    const resolutions = Array.isArray(login.resolutions) ? login.resolutions : [];
+    const loginChips = [
+        loginRoom.duration_min !== null && loginRoom.duration_min !== undefined ? `⏱ ${loginRoom.duration_min} menit` : '',
+        anchor.zodiac ? `Zodiac ${anchor.zodiac}` : '',
+        fanClub ? `💝 Fan Club Lv${fanClub.level ?? '—'} · ${detailNum(fanClub.score)}${fanClub.next_at ? ` / ${detailNum(fanClub.next_at)} ke Lv${fanClub.next_level}` : ''}` : '',
+        anchor.account_since ? `Akun sejak ${new Date(Number(anchor.account_since) * 1000).toLocaleDateString('id-ID')}` : '',
+        loginRoom.product_num ? `🛒 ${detailNum(loginRoom.product_num)} produk` : '',
+        loginRoom.is_pk ? '⚔ PK aktif' : '',
+        loginRoom.business_live ? 'Business live' : '',
+        loginRoom.composition?.my_follow !== null && loginRoom.composition?.my_follow !== undefined ? `Follower ${loginRoom.composition.my_follow}%` : '',
+        ranks.host_rank ? `💰 Host ${ranks.host_rank.rank > 0 ? `#${ranks.host_rank.rank} nasional` : ''} — ${ranks.host_rank.desc || detailNum(ranks.host_rank.score)} koin` : ''
+    ].filter(Boolean);
+
+    return `<div class="tiktok-detail-content">
+        <div class="tiktok-detail-hero">
+            <div class="tiktok-detail-profile">
+                ${detailImage(anchor.avatar || stream.avatar_url, name, 'tiktok-detail-avatar')}
+                <div>
+                    <div class="tiktok-detail-badges"><span class="detail-status live">LIVE</span><span class="detail-session active">TikTok login session aktif</span></div>
+                    <h2>${esc(name)}</h2>
+                    <div class="detail-handle">@${esc(String(data.username || stream.source_key || '').replace(/^@/, ''))}</div>
+                    ${anchor.bio ? `<div class="detail-bio">${esc(anchor.bio)}</div>` : ''}
+                </div>
+            </div>
+            <div class="detail-hero-meta">Durasi ${esc(loginRoom.duration_min !== undefined ? `${loginRoom.duration_min} menit` : '—')}<br><span>${detailDate(data.checked_at)}</span></div>
+        </div>
+
+        <section class="detail-card detail-card-first detail-login-card">
+            <div class="detail-login-heading"><h3>🔐 Detail Room — Login Session</h3><span class="detail-login-pill">data login</span></div>
+            <div class="detail-anchor">
+                ${detailImage(anchor.avatar, name, 'detail-anchor-avatar')}
+                <div><strong>${esc(name)}</strong>${anchor.bio ? `<div class="detail-bio">${esc(String(anchor.bio).slice(0, 180))}</div>` : ''}</div>
+            </div>
+            <div class="detail-stats">
+                ${detailStat(detailNum(loginRoom.likes), 'Likes sesi ini')}
+                ${detailStat(detailNum(loginRoom.viewers), 'Penonton')}
+                ${detailStat(detailNum(loginRoom.total_enter), 'Total masuk')}
+                ${detailStat(detailNum(loginRoom.gift_senders), 'Pengirim gift')}
+                ${detailStat(detailNum(loginRoom.new_follows), 'Follow baru')}
+                ${detailStat(detailNum(loginRoom.shares), 'Share')}
+                ${detailStat(detailNum(anchor.followers), 'Followers anchor')}
+                ${detailStat(detailNum(anchor.video_likes_total), 'Like video total')}
+            </div>
+            ${loginChips.length ? `<div class="detail-chips">${loginChips.map(chip => detailChip(chip, 'gold')).join('')}</div>` : ''}
+            <div class="detail-kv-grid">
+                ${detailKv('Komentar', detailNum(loginRoom.comments))}
+                ${detailKv('Fan ticket', detailNum(loginRoom.fan_ticket))}
+                ${detailKv('Fans club', detailNum(anchor.fans_club_count))}
+                ${detailKv('Level fans club', detailNum(anchor.fans_club_level))}
+                ${detailKv('Judul room', esc(login.title || '—'))}
+                ${detailKv('Room ID', `<span class="detail-mono">${esc(login.room_id || '—')}</span>`)}
+                ${detailKv('Battle score', loginRoom.battle_scores?.length ? esc(JSON.stringify(loginRoom.battle_scores)) : '—')}
+            </div>
+            ${resolutions.length ? `<div class="detail-kv"><span>Kualitas</span><b>${resolutions.map(item => detailChip(item, 'gold')).join(' ')}</b></div>` : ''}
+            <div class="detail-stream-links">${detailLink('Buka FLV', login.flv)} ${detailLink('Buka HLS', login.hls)}</div>
+        </section>
+
+        ${topViewers.length ? `<section class="detail-card"><h3>❤️ Top Fan Room${ranks.viewers_total ? ` <span class="detail-muted">— ${detailNum(ranks.viewers_total)} penonton</span>` : ''}</h3><div class="detail-table-wrap"><table class="detail-table"><thead><tr><th>#</th><th>Nama</th><th>Kontribusi</th><th>Level</th></tr></thead><tbody>${topViewers.map(viewer => `<tr><td>${esc(viewer.rank ?? '—')}</td><td>${esc(viewer.nickname || '—')}</td><td>${esc(viewer.desc || detailNum(viewer.score))}</td><td>${viewer.level ? `Lv${esc(viewer.level)}` : '—'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+
+        <details class="detail-raw"><summary>📄 Data lengkap service login</summary><pre>${esc(JSON.stringify(login, null, 2))}</pre></details>
+    </div>`;
+}
+
+function renderTikTokDetail(data, stream) {
+    if (data.mode === 'login' && data.logged_in && data.login_data?.ok) {
+        return renderTikTokLoginDetail(data, stream);
+    }
+
+    const profile = data.profile || {};
+    const room = data.room || {};
+    const extras = data.extras || {};
+    const login = data.login_data;
+    const loginRoom = login?.extra?.room || {};
+    const anchor = login?.extra?.anchor || {};
+    const fanClub = login?.extra?.fan_club;
+    const ranks = login?.ranks || {};
+    const isLogin = data.mode === 'login' && data.logged_in && login?.ok;
+    const name = profile.nickname || stream.display_name || stream.handle || data.username || 'TikTok LIVE';
+    const statusText = data.is_live ? 'LIVE' : 'OFFLINE';
+    const statusClass = data.is_live ? 'live' : 'offline';
+    const chips = [
+        ...(data.tags || []),
+        ...(data.geofencing || []).map(value => `geo: ${value}`),
+        room.multi_stream ? 'multi-stream tersedia' : '',
+        room.orientation !== null && room.orientation !== undefined ? `Landscape flag ${room.orientation}` : '',
+        extras.commerce ? 'TikTok Shop aktif' : '',
+        extras.questions ? `${extras.questions} pertanyaan` : '',
+        extras.stickers ? `${extras.stickers} stiker interaksi` : ''
+    ].filter(Boolean);
+    const products = Array.isArray(data.products) ? data.products : [];
+    const snapshot = data.snapshot || room.cover;
+    const loginNote = data.login_note || 'Sesi TikTok login tidak aktif.';
+
+    let html = `<div class="tiktok-detail-content">
+        <div class="tiktok-detail-hero">
+            <div class="tiktok-detail-profile">
+                ${detailImage(profile.avatar || stream.avatar_url, name, 'tiktok-detail-avatar')}
+                <div>
+                    <div class="tiktok-detail-badges"><span class="detail-status ${statusClass}">${statusText}</span><span class="detail-session ${isLogin ? 'active' : 'guest'}">${isLogin ? 'TikTok login session aktif' : 'Mode guest'}</span></div>
+                    <h2>${esc(name)}</h2>
+                    <div class="detail-handle">@${esc(profile.username || String(data.username || stream.source_key || '').replace(/^@/, ''))}</div>
+                    ${profile.bio ? `<div class="detail-bio">${esc(profile.bio)}</div>` : ''}
+                </div>
+            </div>
+            <div class="detail-hero-meta">Durasi ${esc(room.duration || '—')}<br><span>${detailDate(data.checked_at)}</span></div>
+        </div>
+
+        <section class="detail-card detail-card-first">
+            <h3>📊 Ringkasan Guest</h3>
+            <div class="detail-stats">
+                ${detailStat(detailNum(room.viewers), 'Penonton')}
+                ${detailStat(detailNum(room.likes), 'Likes')}
+                ${detailStat(detailNum(room.total_enter), 'Total masuk')}
+                ${detailStat(detailNum(profile.followers), 'Followers')}
+                ${detailStat(detailNum(profile.following), 'Mengikuti')}
+                ${detailStat(detailNum(room.shares), 'Share')}
+            </div>
+            <div class="detail-kv-grid">
+                ${detailKv('Judul room', esc(room.title || stream.title || '—'))}
+                ${detailKv('Room ID', `<span class="detail-mono">${esc(room.room_id || '—')}</span>`)}
+                ${detailKv('UID', `<span class="detail-mono">${esc(profile.uid || '—')}</span>`)}
+                ${detailKv('Mulai live', esc(detailDate(room.started_at)))}
+                ${detailKv('Check alive', data.check_alive === null || data.check_alive === undefined ? '—' : (data.check_alive ? '✓ aktif' : '✗ tidak aktif'))}
+                ${detailKv('Link-mic', profile.link_mic_stats === null || profile.link_mic_stats === undefined ? '—' : esc(String(profile.link_mic_stats)))}
+            </div>
+        </section>
+
+        <section class="detail-card">
+            <h3>🏠 Room & Metadata</h3>
+            ${snapshot ? `<div class="detail-images">${detailImage(snapshot, name, 'detail-room-image')}${room.cover && room.cover !== snapshot ? detailImage(room.cover, name, 'detail-room-image') : ''}</div>` : ''}
+            ${chips.length ? `<div class="detail-chips">${chips.map(chip => detailChip(chip, data.tags?.includes(chip) ? 'pink' : '')).join('')}</div>` : ''}
+            <div class="detail-kv-grid">
+                ${detailKv('Status room', room.status === 2 ? '<span class="detail-live-text">LIVE</span>' : esc(room.status ?? '—'))}
+                ${detailKv('Aweme type', extras.aweme_type === null || extras.aweme_type === undefined ? '—' : esc(String(extras.aweme_type)))}
+                ${detailKv('Group ID', extras.group_id ? `<span class="detail-mono">${esc(extras.group_id)}</span>` : '—')}
+                ${detailKv('Posisi search', extras.position === null || extras.position === undefined ? '—' : `#${Number(extras.position) + 1}`)}
+                ${detailKv('Deteksi wajah', room.face ? `x=${esc(room.face[0])}, y=${esc(room.face[1])}` : '—')}
+            </div>
+        </section>`;
+
+    if (products.length) {
+        html += `<section class="detail-card"><h3>🛒 Produk di Live (${products.length})</h3><ol class="detail-product-list">${products.map(product => `<li>${esc(product)}</li>`).join('')}</ol></section>`;
+    }
+
+    html += renderDetailBattle(data.battle);
+    html += renderDetailStreams(data.streams, room);
+
+    if (isLogin) {
+        const loginChips = [
+            loginRoom.duration_min !== null && loginRoom.duration_min !== undefined ? `⏱ ${loginRoom.duration_min} menit` : '',
+            anchor.zodiac ? `Zodiac ${anchor.zodiac}` : '',
+            fanClub ? `💝 Fan Club Lv${fanClub.level} · ${detailNum(fanClub.score)}${fanClub.next_at ? ` / ${detailNum(fanClub.next_at)} ke Lv${fanClub.next_level}` : ''}` : '',
+            anchor.account_since ? `Akun sejak ${new Date(Number(anchor.account_since) * 1000).toLocaleDateString('id-ID')}` : '',
+            loginRoom.product_num ? `🛒 ${detailNum(loginRoom.product_num)} produk` : '',
+            loginRoom.is_pk ? '⚔ PK aktif' : '',
+            loginRoom.business_live ? 'Business live' : '',
+            loginRoom.composition?.my_follow !== null && loginRoom.composition?.my_follow !== undefined ? `Follower ${loginRoom.composition.my_follow}%` : '',
+            ranks.host_rank ? `💰 Host ${ranks.host_rank.rank > 0 ? `#${ranks.host_rank.rank} nasional` : ''} — ${ranks.host_rank.desc || detailNum(ranks.host_rank.score)} koin` : ''
+        ].filter(Boolean);
+        const topViewers = Array.isArray(ranks.top_viewers) ? ranks.top_viewers : [];
+
+        html += `<section class="detail-card detail-login-card">
+            <div class="detail-login-heading"><h3>🔐 Detail Room — Login Session</h3><span class="detail-login-pill">data login</span></div>
+            <div class="detail-anchor">
+                ${detailImage(anchor.avatar, anchor.nickname || name, 'detail-anchor-avatar')}
+                <div><strong>${esc(anchor.nickname || name)}</strong>${anchor.bio ? `<div class="detail-bio">${esc(String(anchor.bio).slice(0, 180))}</div>` : ''}</div>
+            </div>
+            <div class="detail-stats">
+                ${detailStat(detailNum(loginRoom.likes), 'Likes sesi ini')}
+                ${detailStat(detailNum(loginRoom.viewers), 'Penonton')}
+                ${detailStat(detailNum(loginRoom.total_enter), 'Total masuk')}
+                ${detailStat(detailNum(loginRoom.gift_senders), 'Pengirim gift')}
+                ${detailStat(detailNum(loginRoom.new_follows), 'Follow baru')}
+                ${detailStat(detailNum(loginRoom.shares), 'Share')}
+                ${detailStat(detailNum(anchor.followers), 'Followers anchor')}
+                ${detailStat(detailNum(anchor.video_likes_total), 'Like video total')}
+            </div>
+            ${loginChips.length ? `<div class="detail-chips">${loginChips.map(chip => detailChip(chip, 'gold')).join('')}</div>` : ''}
+            <div class="detail-kv-grid">
+                ${detailKv('Komentar', detailNum(loginRoom.comments))}
+                ${detailKv('Fan ticket', detailNum(loginRoom.fan_ticket))}
+                ${detailKv('Fans club', detailNum(anchor.fans_club_count))}
+                ${detailKv('Level fans club', detailNum(anchor.fans_club_level))}
+                ${detailKv('Judul login', esc(login.title || room.title || '—'))}
+                ${detailKv('Room ID login', `<span class="detail-mono">${esc(login.room_id || room.room_id || '—')}</span>`)}
+            </div>
+            <div class="detail-stream-links">${detailLink('Buka FLV', login.flv)} ${detailLink('Buka HLS', login.hls)}</div>
+        </section>`;
+
+        if (topViewers.length) {
+            html += `<section class="detail-card"><h3>❤️ Top Fan Room${ranks.viewers_total ? ` <span class="detail-muted">— ${detailNum(ranks.viewers_total)} penonton</span>` : ''}</h3><div class="detail-table-wrap"><table class="detail-table"><thead><tr><th>#</th><th>Nama</th><th>Kontribusi</th><th>Level</th></tr></thead><tbody>${topViewers.map(viewer => `<tr><td>${esc(viewer.rank ?? '—')}</td><td>${esc(viewer.nickname || '—')}</td><td>${esc(viewer.desc || detailNum(viewer.score))}</td><td>${viewer.level ? `Lv${esc(viewer.level)}` : '—'}</td></tr>`).join('')}</tbody></table></div></section>`;
+        }
+    } else {
+        html += `<section class="detail-card detail-guest-note"><h3>🔓 Detail Login Session</h3><p>${esc(loginNote)}</p><small>Data guest tetap tersedia. Detail room, fan club, rank, dan top fan memerlukan sesi TikTok login pada service Python.</small></section>`;
+    }
+
+    html += `<details class="detail-raw"><summary>📄 Data lengkap service</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre></details></div>`;
+    return html;
+}
+
+async function openTikTokDetailModal(id) {
+    if (!state.user) return;
+    const stream = state.streams.find(item => item.id === id);
+    if (!stream || stream.platform !== 'tiktok' || !stream.is_live) {
+        showToast('ℹ️', 'Detail hanya tersedia untuk TikTok yang sedang LIVE', true);
+        return;
+    }
+
+    const modal = $('tiktokDetailModal');
+    const body = $('tiktokDetailBody');
+    const requestId = ++tiktokDetailState.requestId;
+    tiktokDetailState.streamId = id;
+    $('tiktokDetailTitle').textContent = `🔎 ${stream.handle || stream.display_name || 'TikTok LIVE'}`;
+    $('tiktokDetailSubtitle').textContent = stream.title || 'Detail room TikTok';
+    body.innerHTML = '<div class="detail-loading"><div class="loading-spinner"></div><p>Mengambil detail TikTok…</p><small>Mencoba data login session terlebih dahulu.</small></div>';
+    modal.classList.add('active');
+
+    try {
+        const data = await api(`/api/streams/${id}/tiktok-detail`);
+        if (requestId !== tiktokDetailState.requestId) return;
+        $('tiktokDetailSubtitle').textContent = data.mode === 'login'
+            ? 'Detail dari sesi login TikTok'
+            : 'Detail guest (fallback karena sesi login tidak tersedia)';
+        body.innerHTML = renderTikTokDetail(data, stream);
+    } catch (err) {
+        if (requestId !== tiktokDetailState.requestId) return;
+        body.innerHTML = `<div class="detail-error"><div>⚠️</div><h3>Detail TikTok gagal dimuat</h3><p>${esc(err.message)}</p><small>Pastikan service Python aktif dan URL-nya benar di TIKTOK_DETAIL_SERVICE_URL.</small></div>`;
+    }
+}
+
 async function api(path, opts = {}) {
     const res = await fetch(path, {
         headers: { 'Content-Type': 'application/json' },
@@ -234,6 +559,7 @@ async function logout() {
     try { await api('/api/auth/logout', { method: 'POST' }); } catch (_) { /* abaikan */ }
     state.user = null;
     closeCommentsModal();
+    closeTikTokDetailModal();
     stopAllPlayers();
     state.streams = [];
     state.categories = [];
@@ -581,6 +907,9 @@ function cardHtml(item, monitored) {
     const key = monitored ? 's-' + item.id : 'r-' + item._idx;
 
     const searchSaved = !monitored && isSearchSaved(item);
+    const detailAction = monitored && item.platform === 'tiktok' && item.is_live
+        ? `<button class="icon-btn detail-btn" onclick="openTikTokDetailModal(${item.id})" title="Buka detail TikTok" aria-label="Buka detail TikTok">🔎</button>`
+        : '';
     const commentAction = monitored && item.platform === 'tiktok' && item.is_live
         ? `<button class="icon-btn comment-btn" onclick="openCommentsModal(${item.id})" title="Buka komentar LIVE" aria-label="Buka komentar LIVE">💬</button>`
         : '';
@@ -594,8 +923,9 @@ function cardHtml(item, monitored) {
         <button class="save-btn icon-btn ${item.saved ? 'saved' : ''}" onclick="toggleSave(${item.id})"
                 title="${item.saved ? 'Hapus dari Saved' : 'Simpan ke Saved'}">${item.saved ? '📌' : '🔖'}</button>
         <button class="icon-btn" onclick="deleteStream(${item.id})" title="Hapus dari monitoring">🗑</button>
+        ${detailAction}
         ${commentAction}`
-            : commentAction)
+            : `${detailAction}${commentAction}`)
         : (isAdmin()
             ? `<button class="save-btn icon-btn ${searchSaved ? 'saved' : ''}"
                 onclick="${searchSaved ? `showToast('ℹ️', 'Stream ini sudah ada di Saved')` : `saveFromSearch(${item._idx})`}" 
@@ -1418,6 +1748,9 @@ function bindEvents() {
     });
     $('usersModal').addEventListener('click', function (e) {
         if (e.target === this) closeUsersPanel();
+    });
+    $('tiktokDetailModal').addEventListener('click', function (e) {
+        if (e.target === this) closeTikTokDetailModal();
     });
     $('commentsModal').addEventListener('click', function (e) {
         if (e.target === this) closeCommentsModal();
