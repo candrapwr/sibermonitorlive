@@ -260,6 +260,12 @@ async function fetchTikTokDetail(stream) {
   }
 }
 
+/** Username TikTok dari hasil pencarian — dipakai tanpa membuat row Saved. */
+function normalizeSearchTikTokKey(value) {
+  const key = String(value || '').trim().replace(/^@+/, '');
+  return /^[A-Za-z0-9._-]{1,100}$/.test(key) ? key.toLowerCase() : null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Proxy gambar (cover/avatar)                                         */
 /*                                                                     */
@@ -819,15 +825,16 @@ app.get('/api/streams/:id/tiktok-detail', wrapAsync(async (req, res) => {
   res.json(detail);
 }));
 
-// Komentar TikTok LIVE — profile anonim terpisah, streaming via SSE
-app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const stream = db.getStream(id);
-  if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
-  if (stream.platform !== 'tiktok') return res.status(400).json({ error: 'Komentar saat ini hanya tersedia untuk TikTok' });
-  if (!stream.is_live) return res.status(409).json({ error: 'Stream sedang offline' });
+// Detail TikTok langsung dari card hasil pencarian — tidak perlu Saved dahulu.
+app.get('/api/search/tiktok-detail', adminOnly, wrapAsync(async (req, res) => {
+  const sourceKey = normalizeSearchTikTokKey(req.query.source_key);
+  if (!sourceKey) return res.status(400).json({ error: 'source_key TikTok tidak valid' });
+  const detail = await fetchTikTokDetail({ platform: 'tiktok', source_key: sourceKey });
+  res.json(detail);
+}));
 
-  const state = await tiktokComments.start(id, stream);
+// Komentar TikTok LIVE — profile anonim terpisah, streaming via SSE
+function attachCommentsSse(req, res, roomKey, state) {
   res.set({
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
@@ -843,7 +850,7 @@ app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
   // Semua event komentar/gift dikirim sebagai item mentah agar bentuknya
   // sama dengan snapshot — frontend (appendComments) butuh item.id di level
   // atas; membungkus gift sebagai {type, comment} membuatnya terbuang.
-  const unsubscribe = tiktokComments.subscribe(id, event => send(event.type, event.comment || event));
+  const unsubscribe = tiktokComments.subscribe(roomKey, event => send(event.type, event.comment || event));
   const heartbeat = setInterval(() => {
     try { res.write(`: heartbeat ${Date.now()}\n\n`); } catch (_) {}
   }, 15000);
@@ -853,13 +860,44 @@ app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
     cleanedUp = true;
     clearInterval(heartbeat);
     unsubscribe();
-    // Hentikan room hanya jika ini subscriber terakhir. Subscriber lain
-    // (device/tab lain) tetap memakai page yang sama.
-    if (tiktokComments.subscriberCount(id) === 0) {
-      await tiktokComments.stop(id).catch(() => {});
+    // Hentikan room hanya jika ini subscriber terakhir.
+    if (tiktokComments.subscriberCount(roomKey) === 0) {
+      await tiktokComments.stop(roomKey).catch(() => {});
     }
   };
   req.on('close', cleanup);
+}
+
+app.get('/api/streams/:id/comments', wrapAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const stream = db.getStream(id);
+  if (!stream) return res.status(404).json({ error: 'Stream tidak ditemukan' });
+  if (stream.platform !== 'tiktok') return res.status(400).json({ error: 'Komentar saat ini hanya tersedia untuk TikTok' });
+  if (!stream.is_live) return res.status(409).json({ error: 'Stream sedang offline' });
+
+  const state = await tiktokComments.start(id, stream);
+  attachCommentsSse(req, res, id, state);
+}));
+
+// Komentar langsung dari card hasil pencarian — room sementara berbasis username.
+app.get('/api/search/tiktok-comments', adminOnly, wrapAsync(async (req, res) => {
+  const sourceKey = normalizeSearchTikTokKey(req.query.source_key);
+  if (!sourceKey) return res.status(400).json({ error: 'source_key TikTok tidak valid' });
+
+  // Bila stream ternyata sudah tersimpan, pakai room yang sama agar tidak
+  // membuka tab Chromium komentar kedua untuk username yang sama.
+  const saved = db.findStream('tiktok', sourceKey);
+  const roomKey = saved?.id || `search:${sourceKey}`;
+  const stream = saved
+    ? { ...saved, is_live: true }
+    : {
+      platform: 'tiktok',
+      source_key: sourceKey,
+      handle: '@' + sourceKey,
+      is_live: true
+    };
+  const state = await tiktokComments.start(roomKey, stream);
+  attachCommentsSse(req, res, roomKey, state);
 }));
 
 app.get('/api/streams/:id/comments/status', (req, res) => {

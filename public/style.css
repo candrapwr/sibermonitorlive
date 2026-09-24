@@ -1331,6 +1331,8 @@ body:not(.is-admin) .admin-only {
 .comments-empty p { margin: 0; }
 .comments-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; background: #111118; border-top: 1px solid #26263a; color: #69708a; font-size: 11px; }
 .comments-footer .btn { padding: 6px 9px; font-size: 10px; }
+.detail-btn { color: #9aaeff; }
+.detail-btn:hover { color: #25f4ee; }
 .comment-btn { color: #ff8cb0; }
 .comment-btn:hover { color: #ff0050; }
 @keyframes commentIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }

@@ -160,8 +160,27 @@ function openCommentsModal(id) {
         showToast('ℹ️', 'Komentar hanya tersedia saat TikTok sedang LIVE', true);
         return;
     }
+    openCommentsStream(stream, `/api/streams/${id}/comments`, id);
+}
+
+function openCommentsFromSearch(idx) {
+    if (!state.user) return;
+    const stream = state.searchResults?.[idx];
+    if (!stream || stream.platform !== 'tiktok' || !stream.is_live) {
+        showToast('ℹ️', 'Komentar hanya tersedia saat TikTok sedang LIVE', true);
+        return;
+    }
+    const sourceKey = String(stream.source_key || '').replace(/^@/, '');
+    openCommentsStream(
+        stream,
+        `/api/search/tiktok-comments?source_key=${encodeURIComponent(sourceKey)}`,
+        `search:${sourceKey.toLowerCase()}`
+    );
+}
+
+function openCommentsStream(stream, endpoint, streamKey) {
     stopCommentsStream();
-    commentsState.streamId = id;
+    commentsState.streamId = streamKey;
     commentsState.items = [];
     commentsState.seen.clear();
     $('commentsModalTitle').textContent = `💬 ${stream.handle || stream.display_name || 'TikTok LIVE'}`;
@@ -170,7 +189,7 @@ function openCommentsModal(id) {
     $('commentsModal').classList.add('active');
     setCommentsStatus('Menghubungkan ke LIVE…', 'connecting');
 
-    const es = new EventSource(`/api/streams/${id}/comments`);
+    const es = new EventSource(endpoint);
     commentsState.eventSource = es;
     es.addEventListener('snapshot', e => {
         const data = JSON.parse(e.data);
@@ -499,18 +518,37 @@ async function openTikTokDetailModal(id) {
         showToast('ℹ️', 'Detail hanya tersedia untuk TikTok yang sedang LIVE', true);
         return;
     }
+    openTikTokDetailForStream(stream, `/api/streams/${id}/tiktok-detail`, id);
+}
+
+async function openTikTokDetailFromSearch(idx) {
+    if (!state.user) return;
+    const stream = state.searchResults?.[idx];
+    if (!stream || stream.platform !== 'tiktok' || !stream.is_live) {
+        showToast('ℹ️', 'Detail hanya tersedia untuk TikTok yang sedang LIVE', true);
+        return;
+    }
+    const sourceKey = String(stream.source_key || '').replace(/^@/, '');
+    openTikTokDetailForStream(
+        stream,
+        `/api/search/tiktok-detail?source_key=${encodeURIComponent(sourceKey)}`,
+        `search:${sourceKey.toLowerCase()}`
+    );
+}
+
+async function openTikTokDetailForStream(stream, endpoint, streamKey) {
 
     const modal = $('tiktokDetailModal');
     const body = $('tiktokDetailBody');
     const requestId = ++tiktokDetailState.requestId;
-    tiktokDetailState.streamId = id;
+    tiktokDetailState.streamId = streamKey;
     $('tiktokDetailTitle').textContent = `🔎 ${stream.handle || stream.display_name || 'TikTok LIVE'}`;
     $('tiktokDetailSubtitle').textContent = stream.title || 'Detail room TikTok';
     body.innerHTML = '<div class="detail-loading"><div class="loading-spinner"></div><p>Mengambil detail TikTok…</p><small>Mencoba data login session terlebih dahulu.</small></div>';
     modal.classList.add('active');
 
     try {
-        const data = await api(`/api/streams/${id}/tiktok-detail`);
+        const data = await api(endpoint);
         if (requestId !== tiktokDetailState.requestId) return;
         $('tiktokDetailSubtitle').textContent = data.mode === 'login'
             ? 'Detail dari sesi login TikTok'
@@ -907,12 +945,17 @@ function cardHtml(item, monitored) {
     const key = monitored ? 's-' + item.id : 'r-' + item._idx;
 
     const searchSaved = !monitored && isSearchSaved(item);
-    const detailAction = monitored && item.platform === 'tiktok' && item.is_live
+    const searchTikTokLive = !monitored && Number.isInteger(item._idx) && item.platform === 'tiktok' && live;
+    const detailAction = monitored && item.platform === 'tiktok' && live
         ? `<button class="icon-btn detail-btn" onclick="openTikTokDetailModal(${item.id})" title="Buka detail TikTok" aria-label="Buka detail TikTok">🔎</button>`
-        : '';
-    const commentAction = monitored && item.platform === 'tiktok' && item.is_live
+        : searchTikTokLive
+            ? `<button class="icon-btn detail-btn" onclick="openTikTokDetailFromSearch(${item._idx})" title="Buka detail TikTok" aria-label="Buka detail TikTok">🔎</button>`
+            : '';
+    const commentAction = monitored && item.platform === 'tiktok' && live
         ? `<button class="icon-btn comment-btn" onclick="openCommentsModal(${item.id})" title="Buka komentar LIVE" aria-label="Buka komentar LIVE">💬</button>`
-        : '';
+        : searchTikTokLive
+            ? `<button class="icon-btn comment-btn" onclick="openCommentsFromSearch(${item._idx})" title="Buka komentar LIVE" aria-label="Buka komentar LIVE">💬</button>`
+            : '';
     const actions = monitored
         ? (isAdmin()
             ? `
@@ -927,11 +970,11 @@ function cardHtml(item, monitored) {
         ${commentAction}`
             : `${detailAction}${commentAction}`)
         : (isAdmin()
-            ? `<button class="save-btn icon-btn ${searchSaved ? 'saved' : ''}"
+            ? `${detailAction}${commentAction}<button class="save-btn icon-btn ${searchSaved ? 'saved' : ''}"
                 onclick="${searchSaved ? `showToast('ℹ️', 'Stream ini sudah ada di Saved')` : `saveFromSearch(${item._idx})`}" 
                 title="${searchSaved ? 'Sudah tersimpan di Saved' : 'Simpan ke Saved lalu pilih kategori'}"
                 aria-label="${searchSaved ? 'Sudah tersimpan di Saved' : 'Simpan ke Saved'}">${searchSaved ? '📌' : '🔖'}</button>`
-            : '');
+            : `${detailAction}${commentAction}`);
 
     const tags = [
         `<span class="tag">${pmeta.icon} ${pmeta.name}</span>`,
