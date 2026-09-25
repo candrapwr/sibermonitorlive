@@ -408,7 +408,7 @@ function renderTikTokLoginDetail(data, stream) {
             <div class="tiktok-detail-profile">
                 ${detailImage(anchor.avatar || stream.avatar_url, name, 'tiktok-detail-avatar')}
                 <div>
-                    <div class="tiktok-detail-badges"><span class="detail-status live">LIVE</span><span class="detail-session active">TikTok login session aktif</span>${loginDuration !== '—' ? `<span class="detail-session detail-duration">⏱ ${loginDuration}</span>` : ''}</div>
+                    <div class="tiktok-detail-badges"><span class="detail-status live">LIVE</span><span class="detail-session active">Session Aktif</span>${loginDuration !== '—' ? `<span class="detail-session detail-duration">⏱ ${loginDuration}</span>` : ''}</div>
                     <h2>${esc(name)}</h2>
                     <div class="detail-handle">@${esc(String(data.username || stream.source_key || '').replace(/^@/, ''))}</div>
                     ${anchor.bio ? `<div class="detail-bio">${esc(anchor.bio)}</div>` : ''}
@@ -481,7 +481,7 @@ function renderTikTokDetail(data, stream) {
             <div class="tiktok-detail-profile">
                 ${detailImage(profile.avatar || stream.avatar_url, name, 'tiktok-detail-avatar')}
                 <div>
-                    <div class="tiktok-detail-badges"><span class="detail-status ${statusClass}">${statusText}</span><span class="detail-session ${isLogin ? 'active' : 'guest'}">${isLogin ? 'TikTok login session aktif' : 'Mode guest'}</span>${guestDuration !== '—' ? `<span class="detail-session detail-duration">⏱ ${guestDuration}</span>` : ''}</div>
+                    <div class="tiktok-detail-badges"><span class="detail-status ${statusClass}">${statusText}</span><span class="detail-session ${isLogin ? 'active' : 'guest'}">${isLogin ? 'Session Aktif' : 'Mode guest'}</span>${guestDuration !== '—' ? `<span class="detail-session detail-duration">⏱ ${guestDuration}</span>` : ''}</div>
                     <h2>${esc(name)}</h2>
                     <div class="detail-handle">@${esc(profile.username || String(data.username || stream.source_key || '').replace(/^@/, ''))}</div>
                     ${profile.bio ? `<div class="detail-bio">${esc(profile.bio)}</div>` : ''}
