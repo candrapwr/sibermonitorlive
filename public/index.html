@@ -184,7 +184,13 @@
                     <h2 id="tiktokDetailTitle">🔎 Detail TikTok LIVE</h2>
                     <div class="tiktok-detail-subtitle" id="tiktokDetailSubtitle">Detail room TikTok</div>
                 </div>
-                <button class="modal-close" onclick="closeTikTokDetailModal()">×</button>
+                <div class="tiktok-detail-header-actions">
+                    <label class="detail-realtime-toggle" title="Perbarui detail otomatis setiap 5 detik">
+                        <input type="checkbox" id="tiktokDetailRealtime" onchange="setTikTokDetailRealtime(this.checked)">
+                        <span id="tiktokDetailRealtimeLabel">⟳ Realtime OFF</span>
+                    </label>
+                    <button class="modal-close" onclick="closeTikTokDetailModal()">×</button>
+                </div>
             </div>
             <div id="tiktokDetailBody">
                 <div class="detail-loading"><div class="loading-spinner"></div><p>Menyiapkan detail…</p></div>

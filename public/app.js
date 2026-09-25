@@ -33,8 +33,15 @@ const commentsState = {
 };
 const tiktokDetailState = {
     streamId: null,
-    requestId: 0
+    requestId: 0,
+    endpoint: null,
+    stream: null,
+    realtime: false,
+    refreshTimer: null,
+    loading: false,
+    liveDurationAnchorMs: null
 };
+const TIKTOK_DETAIL_REFRESH_MS = 5000;
 
 const isAdmin = () => state.user?.role === 'admin';
 
@@ -221,16 +228,63 @@ function openCommentsStream(stream, endpoint, streamKey) {
 }
 
 function closeTikTokDetailModal() {
+    stopTikTokDetailRealtime();
     tiktokDetailState.streamId = null;
+    tiktokDetailState.endpoint = null;
+    tiktokDetailState.stream = null;
+    tiktokDetailState.realtime = false;
+    tiktokDetailState.loading = false;
+    tiktokDetailState.liveDurationAnchorMs = null;
     tiktokDetailState.requestId += 1;
+    updateTikTokDetailRealtimeControl();
     const modal = $('tiktokDetailModal');
     if (modal) modal.classList.remove('active');
+}
+
+function updateTikTokDetailRealtimeControl() {
+    const toggle = $('tiktokDetailRealtime');
+    const label = $('tiktokDetailRealtimeLabel');
+    if (toggle) toggle.checked = Boolean(tiktokDetailState.realtime);
+    if (label) label.textContent = tiktokDetailState.realtime
+        ? '⟳ Realtime ON · 5 detik'
+        : '⟳ Realtime OFF';
+}
+
+function stopTikTokDetailRealtime() {
+    if (tiktokDetailState.refreshTimer) {
+        clearTimeout(tiktokDetailState.refreshTimer);
+        tiktokDetailState.refreshTimer = null;
+    }
+}
+
+function scheduleTikTokDetailRefresh() {
+    if (!tiktokDetailState.realtime || !tiktokDetailState.streamId || !tiktokDetailState.endpoint) return;
+    stopTikTokDetailRealtime();
+    tiktokDetailState.refreshTimer = setTimeout(() => {
+        tiktokDetailState.refreshTimer = null;
+        refreshTikTokDetail();
+    }, TIKTOK_DETAIL_REFRESH_MS);
+}
+
+function setTikTokDetailRealtime(enabled) {
+    tiktokDetailState.realtime = Boolean(enabled);
+    stopTikTokDetailRealtime();
+    updateTikTokDetailRealtimeControl();
+
+    if (!tiktokDetailState.realtime || !tiktokDetailState.streamId || !tiktokDetailState.endpoint) return;
+    refreshTikTokDetail();
 }
 
 function detailNum(value) {
     if (value === null || value === undefined || value === '') return '—';
     const n = Number(value);
     return Number.isFinite(n) ? formatCount(n) : esc(String(value));
+}
+
+function detailScore(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toLocaleString('id-ID') : esc(String(value));
 }
 
 function detailDate(value) {
@@ -279,6 +333,50 @@ function detailDuration(value, defaultUnit = 'seconds') {
     return [hours, minutes, secs].map(part => String(part).padStart(2, '0')).join(':');
 }
 
+function timestampMs(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return null;
+    return number < 1e12 ? number * 1000 : number;
+}
+
+function liveDurationSeconds(data) {
+    const startedAt = [
+        data?.room?.started_at,
+        data?.started_at,
+        data?.login_data?.started_at,
+        data?.login_data?.extra?.room?.started_at,
+        data?.login_data?.extra?.room?.start_time
+    ].map(timestampMs).find(value => value !== null);
+
+    if (startedAt !== undefined) {
+        tiktokDetailState.liveDurationAnchorMs = startedAt;
+        return Math.max(0, (Date.now() - startedAt) / 1000);
+    }
+
+    // Fallback untuk service lama yang belum mengirim started_at. Simpan
+    // anchor pertama agar durasi tetap berjalan di antara response realtime.
+    const loginDurationSeconds = Number(data?.login_data?.extra?.room?.duration_s);
+    const loginMinutes = Number(data?.login_data?.extra?.room?.duration_min);
+    const guestDuration = detailDuration(data?.room?.duration);
+    const observedSeconds = Number.isFinite(loginDurationSeconds) && loginDurationSeconds >= 0
+        ? loginDurationSeconds
+        : Number.isFinite(loginMinutes) && loginMinutes >= 0
+        ? loginMinutes * 60
+        : guestDuration === '—' ? null : Number(detailDurationToSeconds(guestDuration));
+    if (observedSeconds === null || !Number.isFinite(observedSeconds)) return null;
+
+    if (tiktokDetailState.liveDurationAnchorMs === null) {
+        tiktokDetailState.liveDurationAnchorMs = Date.now() - observedSeconds * 1000;
+    }
+    return Math.max(0, (Date.now() - tiktokDetailState.liveDurationAnchorMs) / 1000);
+}
+
+function detailDurationToSeconds(value) {
+    const match = String(value || '').match(/^(\d+):(\d{2}):(\d{2})$/);
+    if (!match) return NaN;
+    return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
 function detailHttpUrl(value) {
     const url = String(value || '').trim();
     return /^https?:\/\//i.test(url) ? url : '';
@@ -311,21 +409,64 @@ function detailChip(text, tone = '') {
     return `<span class="detail-chip ${tone}">${esc(String(text))}</span>`;
 }
 
+function battlePlayers(battle) {
+    if (!battle || typeof battle !== 'object') return [];
+    const players = Array.isArray(battle.players)
+        ? battle.players
+        : Array.isArray(battle.participants) ? battle.participants : [];
+    return players.filter(player => player && typeof player === 'object');
+}
+
+function battlePlayerAvatar(player) {
+    if (typeof player?.avatar === 'string') return player.avatar;
+    if (typeof player?.avatar_url === 'string') return player.avatar_url;
+    if (typeof player?.avatar_thumb === 'string') return player.avatar_thumb;
+    return player?.avatar_thumb?.url_list?.[0] || '';
+}
+
+function battlePlayerName(player) {
+    return player?.nickname || player?.nick_name || player?.name || player?.username || '—';
+}
+
 function renderDetailBattle(battle) {
-    if (!battle?.players?.length) return '';
-    const battleDuration = detailDuration(battle.duration_s);
-    return `<section class="detail-card">
-        <h3>⚔ PK / Battle</h3>
-        <div class="detail-battle">${battle.players.map((player, index) => `
-            <div class="detail-battle-player">
-                ${detailImage(player.avatar, player.nickname, 'detail-battle-avatar')}
-                <div class="detail-battle-score">${detailNum(player.score)}</div>
-                <div class="detail-battle-name">${esc(player.nickname || '—')}</div>
-                ${player.league ? `<div class="detail-muted">Liga ${esc(player.league)}</div>` : ''}
-                ${player.top_armies?.length ? `<div class="detail-muted">Top: ${player.top_armies.map(a => `${esc(a.name || '—')} (${detailNum(a.score)})`).join(' · ')}</div>` : ''}
-            </div>${index === 0 && battle.players.length > 1 ? '<div class="detail-battle-vs">VS</div>' : ''}`).join('')}</div>
+    const players = battlePlayers(battle);
+    if (!players.length) return '';
+    const isMultiGuest = battle.multi_guest === true || Number(battle.layout) === 4;
+    const battleDuration = detailDuration(battle.duration_s ?? battle.duration);
+    const battleTitle = isMultiGuest
+        ? '⚔ PK / Battle — Multi-guest 2v2'
+        : players.length > 2 ? `⚔ PK / Battle — ${players.length} peserta` : '⚔ PK / Battle';
+    const renderPlayer = (player, index) => {
+        const name = battlePlayerName(player);
+        const avatar = battlePlayerAvatar(player);
+        const topArmies = Array.isArray(player.top_armies) ? player.top_armies : [];
+        return `<article class="detail-battle-player" role="listitem">
+            <div class="detail-battle-rank">#${index + 1}</div>
+            ${detailImage(avatar, name, 'detail-battle-avatar')}
+            <div class="detail-battle-score">${detailNum(player.score ?? player.battle_score ?? player.hostScore)}</div>
+            <div class="detail-battle-name">${esc(name)}</div>
+            ${player.username ? `<div class="detail-battle-handle">@${esc(String(player.username).replace(/^@/, ''))}</div>` : ''}
+            ${player.league ? `<div class="detail-battle-league">Liga ${esc(player.league)}</div>` : ''}
+            ${topArmies.length ? `<div class="detail-battle-armies"><span>Top army</span>${topArmies.slice(0, 3).map(army => `<div>${esc(army.nickname || army.name || '—')} <b>${detailNum(army.score ?? army.contribution_score)}</b></div>`).join('')}</div>` : ''}
+        </article>`;
+    };
+    const battleLayout = isMultiGuest && players.length > 2
+        ? `<div class="detail-battle-teams" role="list">
+            <div class="detail-battle-team">${players.slice(0, Math.ceil(players.length / 2)).map(renderPlayer).join('')}</div>
+            <div class="detail-battle-vs" aria-hidden="true">VS</div>
+            <div class="detail-battle-team">${players.slice(Math.ceil(players.length / 2)).map(renderPlayer).join('')}</div>
+        </div>`
+        : `<div class="detail-battle-arena" role="list">
+            ${players.map((player, index) => `${index > 0 ? '<div class="detail-battle-vs" aria-hidden="true">VS</div>' : ''}${renderPlayer(player, index)}`).join('')}
+        </div>`;
+    const battleNote = battle.note || battle.bubble_text;
+
+    return `<section class="detail-card detail-battle-card">
+        <h3>${battleTitle}</h3>
+        ${battleLayout}
         ${battleDuration !== '—' ? `<div class="detail-muted detail-centered">Durasi ${battleDuration}</div>` : ''}
-        ${battle.bubble_text ? `<div class="detail-muted detail-centered">${esc(battle.bubble_text)}</div>` : ''}
+        ${battle.battle_id ? `<div class="detail-muted detail-centered">Battle ID ${esc(String(battle.battle_id))}</div>` : ''}
+        ${battleNote ? `<div class="detail-muted detail-centered detail-battle-note">${esc(battleNote)}</div>` : ''}
     </section>`;
 }
 
@@ -355,6 +496,23 @@ function renderTikTokLiveHistory(liveHistory) {
     if (!liveHistory || typeof liveHistory !== 'object') return '';
     const rows = Array.isArray(liveHistory.history) ? liveHistory.history : [];
     if (!rows.length && liveHistory.total === undefined) return '';
+    const visibleRows = 10;
+    const renderHistoryItem = (row, index, hidden = false) => `<article class="detail-history-item"${hidden ? ' hidden' : ''}>
+        <div class="detail-history-item-head">
+            <span class="detail-history-index">#${index + 1}</span>
+            <div class="detail-history-heading">
+                <div class="detail-history-title">${esc(row.title || 'Tanpa judul')}</div>
+                ${row.room_id ? `<div class="detail-history-room">Room ${esc(row.room_id)}</div>` : ''}
+            </div>
+            <span class="detail-history-duration">⏱ ${historyDuration(row)}</span>
+        </div>
+        <div class="detail-history-meta">
+            <div><span>Mulai</span><b>${detailDate(row.start_time)}</b></div>
+            <div><span>Selesai</span><b>${detailDate(row.end_time)}</b></div>
+            <div><span>Likes</span><b>❤️ ${detailNum(row.likes)}</b></div>
+        </div>
+    </article>`;
+    const remaining = Math.max(0, rows.length - visibleRows);
 
     return `<section class="detail-card detail-history-card">
         <h3>🕘 Riwayat LIVE${liveHistory.total !== undefined ? ` <span class="detail-muted">— ${detailNum(liveHistory.total)} sesi</span>` : ''}</h3>
@@ -363,26 +521,27 @@ function renderTikTokLiveHistory(liveHistory) {
             ${detailStat(detailNum(liveHistory.fans_club_count), 'Fans club')}
         </div>
         ${rows.length ? `<div class="detail-history-list">
-            ${rows.map((row, index) => `<article class="detail-history-item">
-                <div class="detail-history-item-head">
-                    <span class="detail-history-index">#${index + 1}</span>
-                    <div class="detail-history-heading">
-                        <div class="detail-history-title">${esc(row.title || 'Tanpa judul')}</div>
-                        ${row.room_id ? `<div class="detail-history-room">Room ${esc(row.room_id)}</div>` : ''}
-                    </div>
-                    <span class="detail-history-duration">⏱ ${historyDuration(row)}</span>
-                </div>
-                <div class="detail-history-meta">
-                    <div><span>Mulai</span><b>${detailDate(row.start_time)}</b></div>
-                    <div><span>Selesai</span><b>${detailDate(row.end_time)}</b></div>
-                    <div><span>Likes</span><b>❤️ ${detailNum(row.likes)}</b></div>
-                </div>
-            </article>`).join('')}
-        </div>` : '<div class="detail-muted">Belum ada riwayat LIVE.</div>'}
+            ${rows.map((row, index) => renderHistoryItem(row, index, index >= visibleRows)).join('')}
+        </div>${remaining ? `<button type="button" class="btn detail-history-load-more" onclick="loadMoreTikTokHistory(this)">Muat lebih banyak (${Math.min(visibleRows, remaining)} lagi)</button>` : ''}` : '<div class="detail-muted">Belum ada riwayat LIVE.</div>'}
     </section>`;
 }
 
-function renderTikTokLoginDetail(data, stream) {
+function loadMoreTikTokHistory(button) {
+    const card = button?.closest('.detail-history-card');
+    const list = card?.querySelector('.detail-history-list');
+    if (!list) return;
+
+    const hiddenRows = [...list.querySelectorAll('.detail-history-item[hidden]')];
+    hiddenRows.slice(0, 10).forEach(row => { row.hidden = false; });
+    const remaining = hiddenRows.length - Math.min(hiddenRows.length, 10);
+    if (remaining <= 0) {
+        button.remove();
+    } else {
+        button.textContent = `Muat lebih banyak (${Math.min(10, remaining)} lagi)`;
+    }
+}
+
+function renderTikTokLoginDetail(data, stream, liveDurationSecondsValue = null) {
     const login = data.login_data || {};
     const loginRoom = login.extra?.room || {};
     const anchor = login.extra?.anchor || {};
@@ -390,9 +549,13 @@ function renderTikTokLoginDetail(data, stream) {
     const name = anchor.nickname || stream.display_name || stream.handle || data.username || 'TikTok LIVE';
     const topViewers = Array.isArray(ranks.top_viewers) ? ranks.top_viewers : [];
     const resolutions = Array.isArray(login.resolutions) ? login.resolutions : [];
-    const loginDuration = detailDuration(loginRoom.duration_min, 'minutes');
+    const loginDuration = liveDurationSecondsValue === null
+        ? detailDuration(loginRoom.duration_min, 'minutes')
+        : detailDuration(liveDurationSecondsValue);
     const liveHistoryData = login.live_history;
     const liveHistory = renderTikTokLiveHistory(liveHistoryData);
+    const battle = login.battle || login.extra?.battle || loginRoom.battle;
+    const battleCard = renderDetailBattle(battle);
     const loginChips = [
         anchor.zodiac ? `Zodiac ${anchor.zodiac}` : '',
         anchor.account_since ? `Akun sejak ${new Date(Number(anchor.account_since) * 1000).toLocaleDateString('id-ID')}` : '',
@@ -400,7 +563,7 @@ function renderTikTokLoginDetail(data, stream) {
         loginRoom.is_pk ? '⚔ PK aktif' : '',
         loginRoom.business_live ? 'Business live' : '',
         loginRoom.composition?.my_follow !== null && loginRoom.composition?.my_follow !== undefined ? `Follower ${loginRoom.composition.my_follow}%` : '',
-        ranks.host_rank ? `💰 Host ${ranks.host_rank.rank > 0 ? `#${ranks.host_rank.rank} nasional` : ''} — ${ranks.host_rank.desc || detailNum(ranks.host_rank.score)} koin` : ''
+        ranks.host_rank ? `💰 Host ${ranks.host_rank.rank > 0 ? `#${ranks.host_rank.rank} nasional` : ''} — ${detailScore(ranks.host_rank.score)} koin` : ''
     ].filter(Boolean);
 
     return `<div class="tiktok-detail-content">
@@ -431,11 +594,12 @@ function renderTikTokLoginDetail(data, stream) {
                 ${detailKv('Fan ticket', detailNum(loginRoom.fan_ticket))}
                 ${detailKv('Fans club', detailNum(liveHistoryData?.fans_club_count))}
                 ${detailKv('Room ID', `<span class="detail-mono">${esc(login.room_id || '—')}</span>`)}
-                ${detailKv('Battle score', loginRoom.battle_scores?.length ? esc(JSON.stringify(loginRoom.battle_scores)) : '—')}
             </div>
             ${resolutions.length ? `<div class="detail-kv"><span>Kualitas</span><b>${resolutions.map(item => detailChip(item, 'gold')).join(' ')}</b></div>` : ''}
             <div class="detail-stream-links">${detailLink('Buka FLV', login.flv)} ${detailLink('Buka HLS', login.hls)}</div>
         </section>
+
+        ${battleCard}
 
         ${topViewers.length ? `<section class="detail-card"><h3>❤️ Top Fan Room${ranks.viewers_total ? ` <span class="detail-muted">— ${detailNum(ranks.viewers_total)} penonton</span>` : ''}</h3><div class="detail-table-wrap"><table class="detail-table"><thead><tr><th>#</th><th>Nama</th><th>Kontribusi</th><th>Level</th></tr></thead><tbody>${topViewers.map(viewer => `<tr><td>${esc(viewer.rank ?? '—')}</td><td>${esc(viewer.nickname || '—')}</td><td>${esc(viewer.desc || detailNum(viewer.score))}</td><td>${viewer.level ? `Lv${esc(viewer.level)}` : '—'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
 
@@ -445,9 +609,9 @@ function renderTikTokLoginDetail(data, stream) {
     </div>`;
 }
 
-function renderTikTokDetail(data, stream) {
+function renderTikTokDetail(data, stream, liveDurationSecondsValue = null) {
     if (data.mode === 'login' && data.logged_in && data.login_data?.ok) {
-        return renderTikTokLoginDetail(data, stream);
+        return renderTikTokLoginDetail(data, stream, liveDurationSecondsValue);
     }
 
     const profile = data.profile || {};
@@ -458,7 +622,9 @@ function renderTikTokDetail(data, stream) {
     const anchor = login?.extra?.anchor || {};
     const ranks = login?.ranks || {};
     const isLogin = data.mode === 'login' && data.logged_in && login?.ok;
-    const guestDuration = detailDuration(room.duration);
+    const guestDuration = liveDurationSecondsValue === null
+        ? detailDuration(room.duration)
+        : detailDuration(liveDurationSecondsValue);
     const liveHistoryData = data.live_history || login?.live_history;
     const name = profile.nickname || stream.display_name || stream.handle || data.username || 'TikTok LIVE';
     const statusText = data.is_live ? 'LIVE' : 'OFFLINE';
@@ -475,6 +641,7 @@ function renderTikTokDetail(data, stream) {
     const products = Array.isArray(data.products) ? data.products : [];
     const snapshot = data.snapshot || room.cover;
     const loginNote = data.login_note || 'Sesi TikTok login tidak aktif.';
+    const battle = data.battle || login?.battle || login?.extra?.battle || loginRoom.battle;
 
     let html = `<div class="tiktok-detail-content">
         <div class="tiktok-detail-hero">
@@ -525,7 +692,7 @@ function renderTikTokDetail(data, stream) {
         html += `<section class="detail-card"><h3>🛒 Produk di Live (${products.length})</h3><ol class="detail-product-list">${products.map(product => `<li>${esc(product)}</li>`).join('')}</ol></section>`;
     }
 
-    html += renderDetailBattle(data.battle);
+    html += renderDetailBattle(battle);
     html += renderDetailStreams(data.streams, room);
     html += renderTikTokLiveHistory(liveHistoryData);
 
@@ -538,7 +705,7 @@ function renderTikTokDetail(data, stream) {
             loginRoom.is_pk ? '⚔ PK aktif' : '',
             loginRoom.business_live ? 'Business live' : '',
             loginRoom.composition?.my_follow !== null && loginRoom.composition?.my_follow !== undefined ? `Follower ${loginRoom.composition.my_follow}%` : '',
-            ranks.host_rank ? `💰 Host ${ranks.host_rank.rank > 0 ? `#${ranks.host_rank.rank} nasional` : ''} — ${ranks.host_rank.desc || detailNum(ranks.host_rank.score)} koin` : ''
+            ranks.host_rank ? `💰 Host ${ranks.host_rank.rank > 0 ? `#${ranks.host_rank.rank} nasional` : ''} — ${detailScore(ranks.host_rank.score)} koin` : ''
         ].filter(Boolean);
         const topViewers = Array.isArray(ranks.top_viewers) ? ranks.top_viewers : [];
 
@@ -598,26 +765,102 @@ async function openTikTokDetailFromSearch(idx) {
 }
 
 async function openTikTokDetailForStream(stream, endpoint, streamKey) {
-
     const modal = $('tiktokDetailModal');
     const body = $('tiktokDetailBody');
-    const requestId = ++tiktokDetailState.requestId;
+    stopTikTokDetailRealtime();
+    tiktokDetailState.requestId += 1;
     tiktokDetailState.streamId = streamKey;
+    tiktokDetailState.endpoint = endpoint;
+    tiktokDetailState.stream = stream;
+    tiktokDetailState.realtime = false;
+    tiktokDetailState.loading = false;
+    tiktokDetailState.liveDurationAnchorMs = null;
+    updateTikTokDetailRealtimeControl();
     $('tiktokDetailTitle').textContent = `🔎 ${stream.handle || stream.display_name || 'TikTok LIVE'}`;
     $('tiktokDetailSubtitle').textContent = stream.title || 'Detail room TikTok';
     body.innerHTML = '<div class="detail-loading"><div class="loading-spinner"></div><p>Mengambil detail TikTok…</p><small>Mencoba data login session terlebih dahulu.</small></div>';
     modal.classList.add('active');
+    await refreshTikTokDetail();
+}
+
+function realtimeTikTokDetailEndpoint(endpoint) {
+    const separator = endpoint.includes('?') ? '&' : '?';
+    return `${endpoint}${separator}refresh=1`;
+}
+
+function updateTikTokDetailContent(data, stream, liveDurationSecondsValue = null) {
+    const body = $('tiktokDetailBody');
+    const currentContent = body?.querySelector('.tiktok-detail-content');
+    const scrollTop = currentContent?.scrollTop || 0;
+    const scrollLeft = currentContent?.scrollLeft || 0;
+    const battleScrollLeft = currentContent?.querySelector('.detail-battle-arena, .detail-battle-teams')?.scrollLeft || 0;
+    const visibleHistoryCount = currentContent
+        ? currentContent.querySelectorAll('.detail-history-item:not([hidden])').length
+        : null;
+
+    body.innerHTML = renderTikTokDetail(data, stream, liveDurationSecondsValue);
+
+    const nextContent = body.querySelector('.tiktok-detail-content');
+    if (!nextContent) return;
+
+    const restoreViewState = () => {
+        nextContent.scrollTop = scrollTop;
+        nextContent.scrollLeft = scrollLeft;
+        const nextBattle = nextContent.querySelector('.detail-battle-arena, .detail-battle-teams');
+        if (nextBattle) nextBattle.scrollLeft = battleScrollLeft;
+
+        if (visibleHistoryCount === null) return;
+        const historyRows = [...nextContent.querySelectorAll('.detail-history-item')];
+        const rowsToShow = Math.min(historyRows.length, Math.max(10, visibleHistoryCount));
+        historyRows.forEach((row, index) => { row.hidden = index >= rowsToShow; });
+
+        const loadMore = nextContent.querySelector('.detail-history-load-more');
+        const remaining = historyRows.length - rowsToShow;
+        if (!loadMore) return;
+        if (remaining <= 0) {
+            loadMore.remove();
+        } else {
+            loadMore.textContent = `Muat lebih banyak (${Math.min(10, remaining)} lagi)`;
+        }
+    };
+
+    restoreViewState();
+    const scheduleFrame = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : callback => setTimeout(callback, 0);
+    scheduleFrame(restoreViewState);
+}
+
+async function refreshTikTokDetail() {
+    const { endpoint, stream, streamId } = tiktokDetailState;
+    if (!endpoint || !stream || !streamId || tiktokDetailState.loading) return;
+
+    const requestId = ++tiktokDetailState.requestId;
+    const body = $('tiktokDetailBody');
+    tiktokDetailState.loading = true;
 
     try {
-        const data = await api(endpoint);
-        if (requestId !== tiktokDetailState.requestId) return;
+        const requestEndpoint = tiktokDetailState.realtime
+            ? realtimeTikTokDetailEndpoint(endpoint)
+            : endpoint;
+        const data = await api(requestEndpoint);
+        if (requestId !== tiktokDetailState.requestId || streamId !== tiktokDetailState.streamId) return;
         $('tiktokDetailSubtitle').textContent = data.mode === 'login'
             ? 'Detail dari sesi login TikTok'
             : 'Detail guest (fallback karena sesi login tidak tersedia)';
-        body.innerHTML = renderTikTokDetail(data, stream);
+        updateTikTokDetailContent(data, stream, liveDurationSeconds(data));
     } catch (err) {
-        if (requestId !== tiktokDetailState.requestId) return;
-        body.innerHTML = `<div class="detail-error"><div>⚠️</div><h3>Detail TikTok gagal dimuat</h3><p>${esc(err.message)}</p><small>Pastikan service Python aktif dan URL-nya benar di TIKTOK_DETAIL_SERVICE_URL.</small></div>`;
+        if (requestId !== tiktokDetailState.requestId || streamId !== tiktokDetailState.streamId) return;
+        if (!body.querySelector('.tiktok-detail-content')) {
+            body.innerHTML = `<div class="detail-error"><div>⚠️</div><h3>Detail TikTok gagal dimuat</h3><p>${esc(err.message)}</p><small>Pastikan service Python aktif dan URL-nya benar di TIKTOK_DETAIL_SERVICE_URL.</small></div>`;
+        } else if (tiktokDetailState.realtime) {
+            $('tiktokDetailSubtitle').textContent = `Realtime gagal diperbarui: ${err.message}`;
+        }
+    } finally {
+        if (requestId === tiktokDetailState.requestId) {
+            tiktokDetailState.loading = false;
+            scheduleTikTokDetailRefresh();
+        }
     }
 }
 

@@ -174,10 +174,11 @@ function getStreamForUser(req, id) {
  * Login session dicoba lebih dulu karena datanya sudah mencakup kebutuhan
  * popup. Endpoint guest hanya dipanggil sebagai fallback saat login gagal.
  */
-async function fetchTikTokDetail(stream) {
+async function fetchTikTokDetail(stream, options = {}) {
   const key = String(stream.source_key || '').replace(/^@/, '').toLowerCase();
+  const forceRefresh = options.fresh === true;
   const cached = tiktokDetailCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.data;
   if (tiktokDetailInflight.has(key)) return tiktokDetailInflight.get(key);
 
   const pending = (async () => {
@@ -821,7 +822,9 @@ app.get('/api/streams/:id/tiktok-detail', wrapAsync(async (req, res) => {
   if (!stream.is_live) {
     return res.status(409).json({ error: 'Detail hanya tersedia saat TikTok sedang LIVE' });
   }
-  const detail = await fetchTikTokDetail(stream);
+  const detail = await fetchTikTokDetail(stream, {
+    fresh: req.query.refresh === '1' || req.query.refresh === 'true'
+  });
   res.json(detail);
 }));
 
@@ -829,7 +832,9 @@ app.get('/api/streams/:id/tiktok-detail', wrapAsync(async (req, res) => {
 app.get('/api/search/tiktok-detail', adminOnly, wrapAsync(async (req, res) => {
   const sourceKey = normalizeSearchTikTokKey(req.query.source_key);
   if (!sourceKey) return res.status(400).json({ error: 'source_key TikTok tidak valid' });
-  const detail = await fetchTikTokDetail({ platform: 'tiktok', source_key: sourceKey });
+  const detail = await fetchTikTokDetail({ platform: 'tiktok', source_key: sourceKey }, {
+    fresh: req.query.refresh === '1' || req.query.refresh === 'true'
+  });
   res.json(detail);
 }));
 

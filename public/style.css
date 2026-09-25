@@ -1216,6 +1216,11 @@ body:not(.is-admin) .admin-only {
 .tiktok-detail-header { padding: 18px 22px 14px; margin: 0; background: linear-gradient(135deg, #17172b, #111118); border-bottom: 1px solid #26263a; }
 .tiktok-detail-header h2 { margin: 0 0 4px; font-size: 18px; }
 .tiktok-detail-subtitle { color: #8892b0; font-size: 11px; max-width: 620px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tiktok-detail-header-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.detail-realtime-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #303044; border-radius: 999px; color: #8892b0; background: rgba(13,13,20,.7); cursor: pointer; font-size: 10px; white-space: nowrap; user-select: none; }
+.detail-realtime-toggle:hover { color: #25f4ee; border-color: rgba(37,244,238,.42); }
+.detail-realtime-toggle input { width: 13px; height: 13px; margin: 0; accent-color: #25f4ee; cursor: pointer; }
+.detail-realtime-toggle:has(input:checked) { color: #75f5d1; border-color: rgba(66,230,164,.45); background: rgba(66,230,164,.1); }
 .tiktok-detail-content { max-height: calc(100vh - 112px); overflow-y: auto; padding: 20px; background: radial-gradient(circle at 50% 0%, rgba(15,52,96,.18), transparent 42%), #0d0d14; }
 .tiktok-detail-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 2px 2px 18px; }
 .tiktok-detail-profile { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -1270,15 +1275,27 @@ body:not(.is-admin) .admin-only {
 .detail-history-meta > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; font-size: 10px; }
 .detail-history-meta span { color: #69708a; flex: 0 0 auto; }
 .detail-history-meta b { color: #d8dbea; font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+.detail-history-load-more { width: 100%; margin-top: 11px; }
 .detail-stream-backup { margin-top: 10px; }
 .detail-stream-links { margin-top: 13px; padding-top: 10px; border-top: 1px solid #26263a; }
 .detail-product-list { margin: 0; padding-left: 22px; color: #e6e6ee; font-size: 11px; line-height: 1.7; }
-.detail-battle { display: flex; align-items: center; justify-content: space-around; gap: 10px; text-align: center; flex-wrap: wrap; }
-.detail-battle-player { width: min(42%, 220px); min-width: 130px; }
+.detail-battle-arena { display: flex; align-items: stretch; justify-content: center; gap: 9px; overflow-x: auto; padding: 4px 2px 8px; text-align: center; }
+.detail-battle-player { flex: 0 0 min(180px, 24vw); min-width: 132px; padding: 11px 9px; border: 1px solid rgba(255,204,85,.2); border-radius: 12px; background: linear-gradient(145deg, rgba(46,38,33,.82), rgba(20,20,30,.96)); box-shadow: 0 7px 22px rgba(0,0,0,.16); }
+.detail-battle-rank { margin-bottom: 6px; color: #69708a; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .detail-battle-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid #ffcc55; background: #1a1a2e; }
 .detail-battle-score { color: #ffcc55; font-size: 22px; font-weight: 800; }
-.detail-battle-name { color: #e6e6ee; font-size: 11px; }
-.detail-battle-vs { color: #69708a; font-size: 12px; font-weight: 700; }
+.detail-battle-name { margin-top: 2px; color: #e6e6ee; font-size: 11px; font-weight: 700; overflow-wrap: anywhere; }
+.detail-battle-handle { margin-top: 3px; color: #69708a; font-size: 9px; overflow-wrap: anywhere; }
+.detail-battle-league { display: inline-block; margin-top: 7px; padding: 3px 7px; border-radius: 999px; color: #ffd979; background: rgba(255,204,85,.1); border: 1px solid rgba(255,204,85,.22); font-size: 9px; }
+.detail-battle-armies { margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); color: #aeb4ca; font-size: 9px; line-height: 1.5; text-align: left; }
+.detail-battle-armies > span { display: block; margin-bottom: 3px; color: #69708a; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; }
+.detail-battle-armies div { display: flex; justify-content: space-between; gap: 7px; }
+.detail-battle-armies div b { color: #ffd979; font-weight: 700; white-space: nowrap; }
+.detail-battle-teams { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; }
+.detail-battle-team { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.detail-battle-team .detail-battle-player { width: auto; min-width: 0; }
+.detail-battle-vs { align-self: center; flex: 0 0 auto; color: #69708a; font-size: 12px; font-weight: 800; letter-spacing: .5px; }
+.detail-battle-note { max-width: 760px; margin-left: auto; margin-right: auto; }
 .detail-muted { color: #69708a; font-size: 10px; line-height: 1.45; }
 .detail-centered { text-align: center; margin-top: 9px; }
 .detail-login-card { border-color: rgba(66,230,164,.25); background: linear-gradient(145deg, rgba(22,40,42,.68), #111118 42%); }
@@ -1298,6 +1315,16 @@ body:not(.is-admin) .admin-only {
     .tiktok-detail-overlay { padding: 10px; }
     .tiktok-detail-modal { width: 100%; max-height: calc(100vh - 20px); }
     .tiktok-detail-content { max-height: calc(100vh - 96px); padding: 13px; }
+    .tiktok-detail-header { align-items: flex-start; gap: 8px; }
+    .tiktok-detail-header-actions { gap: 3px; }
+    .detail-realtime-toggle { padding: 5px 6px; }
+    .detail-realtime-toggle span { max-width: 94px; overflow: hidden; text-overflow: ellipsis; }
+    .detail-battle-teams { grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; overflow: visible; gap: 8px; }
+    .detail-battle-team { display: contents; }
+    .detail-battle-teams .detail-battle-vs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
+    .detail-battle-teams .detail-battle-player { padding: 9px 5px; }
+    .detail-battle-teams .detail-battle-score { font-size: 18px; }
+    .detail-battle-teams .detail-battle-avatar { width: 38px; height: 38px; }
     .tiktok-detail-hero { align-items: flex-start; flex-direction: column; }
     .detail-kv-grid { grid-template-columns: 1fr; }
     .detail-kv b { text-align: left; }
