@@ -1224,10 +1224,10 @@ body:not(.is-admin) .admin-only {
 .detail-handle { color: #00f2ea; font-size: 12px; }
 .detail-bio { color: #8892b0; font-size: 11px; line-height: 1.45; margin-top: 4px; max-width: 560px; }
 .tiktok-detail-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.detail-status, .detail-session, .detail-login-pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: 10px; font-weight: 700; }
+.detail-status, .detail-session { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: 10px; font-weight: 700; }
 .detail-status.live { color: #ff7895; background: rgba(255,0,80,.13); border: 1px solid rgba(255,0,80,.35); }
 .detail-status.offline { color: #9aa0b6; background: #1b1b27; border: 1px solid #303044; }
-.detail-session.active, .detail-login-pill { color: #75f5d1; background: rgba(66,230,164,.1); border: 1px solid rgba(66,230,164,.3); }
+.detail-session.active { color: #75f5d1; background: rgba(66,230,164,.1); border: 1px solid rgba(66,230,164,.3); }
 .detail-session.guest { color: #ffc56d; background: rgba(255,179,71,.1); border: 1px solid rgba(255,179,71,.3); }
 .detail-session.detail-duration { color: #ffd979; background: rgba(255,204,85,.1); border: 1px solid rgba(255,204,85,.3); }
 .detail-card { background: #111118; border: 1px solid #26263a; border-radius: 11px; padding: 16px; margin-top: 12px; }
@@ -1282,7 +1282,6 @@ body:not(.is-admin) .admin-only {
 .detail-muted { color: #69708a; font-size: 10px; line-height: 1.45; }
 .detail-centered { text-align: center; margin-top: 9px; }
 .detail-login-card { border-color: rgba(66,230,164,.25); background: linear-gradient(145deg, rgba(22,40,42,.68), #111118 42%); }
-.detail-login-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .detail-anchor { margin-bottom: 13px; }
 .detail-anchor-avatar { width: 42px; height: 42px; flex-basis: 42px; border-color: #75f5d1; }
 .detail-anchor strong { color: #75f5d1; font-size: 13px; }

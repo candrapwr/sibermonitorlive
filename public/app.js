@@ -417,7 +417,6 @@ function renderTikTokLoginDetail(data, stream) {
         </div>
 
         <section class="detail-card detail-card-first detail-login-card">
-            <div class="detail-login-heading"><h3>🔐 Detail Room — Login Session</h3><span class="detail-login-pill">data login</span></div>
             <div class="detail-anchor">
                 ${detailImage(anchor.avatar, name, 'detail-anchor-avatar')}
                 <div><strong>${esc(name)}</strong>${anchor.bio ? `<div class="detail-bio">${esc(String(anchor.bio).slice(0, 180))}</div>` : ''}</div>
@@ -550,7 +549,6 @@ function renderTikTokDetail(data, stream) {
         const topViewers = Array.isArray(ranks.top_viewers) ? ranks.top_viewers : [];
 
         html += `<section class="detail-card detail-login-card">
-            <div class="detail-login-heading"><h3>🔐 Detail Room — Login Session</h3><span class="detail-login-pill">data login</span></div>
             <div class="detail-anchor">
                 ${detailImage(anchor.avatar, anchor.nickname || name, 'detail-anchor-avatar')}
                 <div><strong>${esc(anchor.nickname || name)}</strong>${anchor.bio ? `<div class="detail-bio">${esc(String(anchor.bio).slice(0, 180))}</div>` : ''}</div>
