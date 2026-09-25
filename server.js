@@ -981,7 +981,9 @@ console.log(`[auth] admin master siap: "${ADMIN_USER}" (role admin)`);
 const server = app.listen(PORT, () => {
   console.log(`[server] SiberMonitorLive berjalan di http://localhost:${PORT}`);
   // Matikan Chromium basi dari run sebelumnya (menahan lock profil persisten)
-  const killed = killStaleBrowsers();
+  // Bersihkan browser headless stale dari search/login dan komentar LIVE.
+  // Hanya proses yang memakai profil aplikasi yang ditargetkan.
+  const killed = killStaleBrowsers([tiktokComments.PROFILE_DIR]);
   if (killed > 0) {
     console.log(`[browser] ${killed} proses Chromium basi dari run sebelumnya dihentikan`);
   }

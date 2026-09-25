@@ -85,15 +85,21 @@ async function closeBrowser() {
  * Identifikasi presisi lewat path profil di command line proses —
  * browser Chrome milik pengguna TIDAK tersentuh.
  */
-function killStaleBrowsers() {
+function killStaleBrowsers(extraProfileDirs = []) {
   const { execSync } = require('child_process');
+  const profileDirs = [...new Set([
+    PROFILE_DIR,
+    ...extraProfileDirs
+  ].filter(Boolean).map(dir => path.resolve(String(dir))))];
   let killed = 0;
   try {
     const out = execSync('ps -eo pid,args', { encoding: 'utf8', timeout: 5000 });
     for (const line of out.split('\n')) {
-      // hanya proses chromium/headless-shell yang memakai profil milik app
-      if (!line.includes(PROFILE_DIR)) continue;
+      // Hanya proses headless Chromium yang memakai profil milik aplikasi.
+      // Chrome biasa milik user dan browser login (HEADLESS=false) tidak disentuh.
+      if (!profileDirs.some(dir => line.includes(dir))) continue;
       if (!/chrom|headless/i.test(line)) continue;
+      if (!/(?:--headless(?:[=\s]|$)|headless[_-]?shell)/i.test(line)) continue;
       const pid = parseInt(line.trim().split(/\s+/)[0], 10);
       if (!Number.isNaN(pid) && pid !== process.pid) {
         try {
@@ -105,8 +111,10 @@ function killStaleBrowsers() {
   } catch (_) { /* ps tidak tersedia → lewati */ }
 
   // Hapus berkas singleton lock basi (peninggalan crash) agar bisa relaunch
-  for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-    try { fs.rmSync(path.join(PROFILE_DIR, f), { force: true }); } catch (_) { /* abaikan */ }
+  for (const profileDir of profileDirs) {
+    for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+      try { fs.rmSync(path.join(profileDir, f), { force: true }); } catch (_) { /* abaikan */ }
+    }
   }
   return killed;
 }
