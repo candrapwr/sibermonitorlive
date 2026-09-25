@@ -417,10 +417,6 @@ function renderTikTokLoginDetail(data, stream) {
         </div>
 
         <section class="detail-card detail-card-first detail-login-card">
-            <div class="detail-anchor">
-                ${detailImage(anchor.avatar, name, 'detail-anchor-avatar')}
-                <div><strong>${esc(name)}</strong>${anchor.bio ? `<div class="detail-bio">${esc(String(anchor.bio).slice(0, 180))}</div>` : ''}</div>
-            </div>
             <div class="detail-stats">
                 ${detailStat(detailNum(loginRoom.likes), 'Likes sesi ini')}
                 ${detailStat(detailNum(loginRoom.viewers), 'Penonton')}
@@ -434,7 +430,6 @@ function renderTikTokLoginDetail(data, stream) {
                 ${detailKv('Komentar', detailNum(loginRoom.comments))}
                 ${detailKv('Fan ticket', detailNum(loginRoom.fan_ticket))}
                 ${detailKv('Fans club', detailNum(liveHistoryData?.fans_club_count))}
-                ${detailKv('Judul room', esc(login.title || '—'))}
                 ${detailKv('Room ID', `<span class="detail-mono">${esc(login.room_id || '—')}</span>`)}
                 ${detailKv('Battle score', loginRoom.battle_scores?.length ? esc(JSON.stringify(loginRoom.battle_scores)) : '—')}
             </div>
@@ -505,7 +500,6 @@ function renderTikTokDetail(data, stream) {
                 ${detailStat(detailNum(room.shares), 'Share')}
             </div>
             <div class="detail-kv-grid">
-                ${detailKv('Judul room', esc(room.title || stream.title || '—'))}
                 ${detailKv('Room ID', `<span class="detail-mono">${esc(room.room_id || '—')}</span>`)}
                 ${detailKv('UID', `<span class="detail-mono">${esc(profile.uid || '—')}</span>`)}
                 ${detailKv('Mulai live', esc(detailDate(room.started_at)))}
@@ -549,10 +543,6 @@ function renderTikTokDetail(data, stream) {
         const topViewers = Array.isArray(ranks.top_viewers) ? ranks.top_viewers : [];
 
         html += `<section class="detail-card detail-login-card">
-            <div class="detail-anchor">
-                ${detailImage(anchor.avatar, anchor.nickname || name, 'detail-anchor-avatar')}
-                <div><strong>${esc(anchor.nickname || name)}</strong>${anchor.bio ? `<div class="detail-bio">${esc(String(anchor.bio).slice(0, 180))}</div>` : ''}</div>
-            </div>
             <div class="detail-stats">
                 ${detailStat(detailNum(loginRoom.likes), 'Likes sesi ini')}
                 ${detailStat(detailNum(loginRoom.viewers), 'Penonton')}
@@ -566,7 +556,6 @@ function renderTikTokDetail(data, stream) {
                 ${detailKv('Komentar', detailNum(loginRoom.comments))}
                 ${detailKv('Fan ticket', detailNum(loginRoom.fan_ticket))}
                 ${detailKv('Fans club', detailNum(liveHistoryData?.fans_club_count))}
-                ${detailKv('Judul login', esc(login.title || room.title || '—'))}
                 ${detailKv('Room ID login', `<span class="detail-mono">${esc(login.room_id || room.room_id || '—')}</span>`)}
             </div>
             <div class="detail-stream-links">${detailLink('Buka FLV', login.flv)} ${detailLink('Buka HLS', login.hls)}</div>
