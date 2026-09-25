@@ -1229,8 +1229,7 @@ body:not(.is-admin) .admin-only {
 .detail-status.offline { color: #9aa0b6; background: #1b1b27; border: 1px solid #303044; }
 .detail-session.active, .detail-login-pill { color: #75f5d1; background: rgba(66,230,164,.1); border: 1px solid rgba(66,230,164,.3); }
 .detail-session.guest { color: #ffc56d; background: rgba(255,179,71,.1); border: 1px solid rgba(255,179,71,.3); }
-.detail-hero-meta { color: #8892b0; font-size: 11px; text-align: right; white-space: nowrap; }
-.detail-hero-meta span { color: #69708a; }
+.detail-session.detail-duration { color: #ffd979; background: rgba(255,204,85,.1); border: 1px solid rgba(255,204,85,.3); }
 .detail-card { background: #111118; border: 1px solid #26263a; border-radius: 11px; padding: 16px; margin-top: 12px; }
 .detail-card-first { margin-top: 0; }
 .detail-card h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 13px; color: #f2f2f5; font-size: 14px; }
@@ -1257,6 +1256,20 @@ body:not(.is-admin) .admin-only {
 .detail-table th { padding: 7px 8px; color: #69708a; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .35px; border-bottom: 1px solid #2a2a3e; }
 .detail-table td { padding: 8px; border-bottom: 1px solid #202030; vertical-align: top; }
 .detail-table tr:last-child td { border-bottom: 0; }
+.detail-history-stats { margin-bottom: 12px; }
+.detail-history-list { display: grid; gap: 9px; }
+.detail-history-item { padding: 12px; border: 1px solid #292941; border-radius: 10px; background: linear-gradient(145deg, rgba(24,24,42,.96), rgba(15,15,25,.96)); box-shadow: 0 5px 18px rgba(0,0,0,.12); }
+.detail-history-item:hover { border-color: rgba(37,244,238,.38); background: linear-gradient(145deg, rgba(27,34,51,.98), rgba(15,15,25,.98)); }
+.detail-history-item-head { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.detail-history-index { flex: 0 0 27px; width: 27px; height: 27px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; color: #25f4ee; background: rgba(37,244,238,.1); font-size: 10px; font-weight: 800; }
+.detail-history-heading { min-width: 0; flex: 1; }
+.detail-history-title { color: #f2f2f5; font-size: 12px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.detail-history-room { margin-top: 3px; color: #69708a; font: 9px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.detail-history-duration { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; color: #ffd979; background: rgba(255,204,85,.1); border: 1px solid rgba(255,204,85,.25); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.detail-history-meta { display: grid; gap: 6px; margin: 10px 0 0 36px; padding-top: 9px; border-top: 1px solid #28283a; }
+.detail-history-meta > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; font-size: 10px; }
+.detail-history-meta span { color: #69708a; flex: 0 0 auto; }
+.detail-history-meta b { color: #d8dbea; font-weight: 500; text-align: right; overflow-wrap: anywhere; }
 .detail-stream-backup { margin-top: 10px; }
 .detail-stream-links { margin-top: 13px; padding-top: 10px; border-top: 1px solid #26263a; }
 .detail-product-list { margin: 0; padding-left: 22px; color: #e6e6ee; font-size: 11px; line-height: 1.7; }
@@ -1290,7 +1303,6 @@ body:not(.is-admin) .admin-only {
     .tiktok-detail-modal { width: 100%; max-height: calc(100vh - 20px); }
     .tiktok-detail-content { max-height: calc(100vh - 96px); padding: 13px; }
     .tiktok-detail-hero { align-items: flex-start; flex-direction: column; }
-    .detail-hero-meta { text-align: left; }
     .detail-kv-grid { grid-template-columns: 1fr; }
     .detail-kv b { text-align: left; }
 }
