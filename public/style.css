@@ -1304,8 +1304,8 @@ body:not(.is-admin) .admin-only {
 }
 
 /* TikTok LIVE comments */
-.comments-overlay { align-items: flex-end; justify-content: flex-end; padding: 24px; }
-.comments-modal { width: min(440px, calc(100vw - 30px)); max-width: none; height: min(680px, calc(100vh - 48px)); padding: 0; display: flex; flex-direction: column; overflow: hidden; border-color: rgba(0,242,234,.25); box-shadow: 0 24px 90px rgba(0,0,0,.7); }
+.comments-overlay { align-items: flex-end; justify-content: flex-end; padding: 24px; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
+.comments-modal { width: min(440px, calc(100vw - 30px)); max-width: none; height: min(680px, calc(100vh - 48px)); padding: 0; display: flex; flex-direction: column; overflow: hidden; background: rgba(17,17,24,.48); border-color: rgba(0,242,234,.25); box-shadow: 0 24px 90px rgba(0,0,0,.7); }
 .comments-header { padding: 18px 20px 14px; margin: 0; background: linear-gradient(135deg, #17172b, #111118); border-bottom: 1px solid #26263a; }
 .comments-header h2 { margin: 0 0 4px; font-size: 17px; }
 .comments-subtitle { color: #8892b0; font-size: 11px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1317,7 +1317,7 @@ body:not(.is-admin) .admin-only {
 .comments-status.connected .status-dot { background: #42e6a4; box-shadow: 0 0 0 3px rgba(66,230,164,.13); }
 .comments-status.warning .status-dot { background: #ffb347; box-shadow: 0 0 0 3px rgba(255,179,71,.13); }
 .comments-status.error .status-dot { background: #ff4f78; box-shadow: 0 0 0 3px rgba(255,79,120,.13); }
-.comments-list { flex: 1; overflow-y: auto; padding: 14px 12px; background: radial-gradient(circle at 50% 0%, rgba(15,52,96,.18), transparent 45%), #0d0d14; }
+.comments-list { flex: 1; overflow-y: auto; padding: 14px 12px; background: radial-gradient(circle at 50% 0%, rgba(15,52,96,.18), transparent 45%), linear-gradient(180deg, rgba(13,13,20,.28), rgba(13,13,20,.48)); }
 .comment-row { display: flex; gap: 9px; padding: 8px 7px; border-radius: 9px; animation: commentIn .2s ease-out; }
 .comment-row:hover { background: rgba(255,255,255,.035); }
 .comment-gift { background: rgba(255, 185, 70, .08); border: 1px solid rgba(255, 185, 70, .18); }
